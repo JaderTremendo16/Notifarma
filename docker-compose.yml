@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: notifarma-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: notifarma-auth
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/auth_db
+      SECRET_KEY: LLave$$ecreta123*
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: notifarma-gateway
+    environment:
+      SECRET_KEY: LLave$$ecreta123*
+      AUTH_SERVICE_URL: http://auth-service:8000
+      MEDICATION_SERVICE_URL: http://medication-service:8002
+      HEALTH_SERVICE_URL: http://health-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8004
+    ports:
+      - "8001:8001"
+    depends_on:
+      - auth-service
+      - medication-service
+      - health-service
+      - notification-service
+  #Aqui ponen sus microservicios, en puertos solo modifican el primero (Ej: 8001:8000)
+
+  medication-service:
+    build:
+      context: ./medication-service
+      dockerfile: Dockerfile
+    container_name: notifarma-medication
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/medication_db
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  health-service:
+    build:
+      context: ./health-service
+      dockerfile: Dockerfile
+    container_name: notifarma-health
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/health_db
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notifarma-notification
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/notification_db
+      MEDICATION_SERVICE_URL: http://medication-service:8002
+      HEALTH_SERVICE_URL: http://health-service:8003
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      medication-service:
+        condition: service_started
+      health-service:
+        condition: service_started
+
+volumes:
+  postgres_data:
