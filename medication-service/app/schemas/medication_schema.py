@@ -10,38 +10,60 @@ from app.models.medication_model import EstadoToma
 # ─── Medicamento ──────────────────────────────────────────────────────────────
 
 class MedicamentoCreate(BaseModel):
-    nombre:           str
-    dosis:            Optional[str]  = None
-    frecuencia_horas: int
-    hora_inicio:      time
-    fecha_inicio:     Optional[date] = None
-    fecha_fin:        Optional[date] = None
+    nombre:              str
+    dosis:               Optional[str]  = None
+    frecuencia_horas:    int
+    hora_inicio:         time
+    fecha_inicio:        Optional[date] = None
+    fecha_fin:           Optional[date] = None
+    stock_actual:        Optional[int]  = 0
+    stock_minimo_alerta: Optional[int]  = 5
 
 
 class MedicamentoUpdate(BaseModel):
-    nombre:           Optional[str]  = None
-    dosis:            Optional[str]  = None
-    frecuencia_horas: Optional[int]  = None
-    hora_inicio:      Optional[time] = None
-    fecha_inicio:     Optional[date] = None
-    fecha_fin:        Optional[date] = None
+    nombre:              Optional[str]  = None
+    dosis:               Optional[str]  = None
+    frecuencia_horas:    Optional[int]  = None
+    hora_inicio:         Optional[time] = None
+    fecha_inicio:        Optional[date] = None
+    fecha_fin:           Optional[date] = None
+    stock_actual:        Optional[int]  = None
+    stock_minimo_alerta: Optional[int]  = None
+
+
+class StockUpdate(BaseModel):
+    stock_actual:        int
+    stock_minimo_alerta: Optional[int] = None
 
 
 class MedicamentoResponse(BaseModel):
-    id:               UUID
-    paciente_id:      UUID
-    nombre:           str
-    dosis:            Optional[str]
-    frecuencia_horas: int
-    hora_inicio:      time
-    fecha_inicio:     Optional[date]
-    fecha_fin:        Optional[date]
-    activo:           bool
-    created_at:       datetime
-    updated_at:       datetime
+    id:                  UUID
+    paciente_id:         UUID
+    nombre:              str
+    dosis:               Optional[str]
+    frecuencia_horas:    int
+    hora_inicio:         time
+    fecha_inicio:        Optional[date]
+    fecha_fin:           Optional[date]
+    stock_actual:        int
+    stock_minimo_alerta: int
+    activo:              bool
+    created_at:          datetime
+    updated_at:          datetime
 
     class Config:
         from_attributes = True
+
+
+class ResumenCuidadorResponse(BaseModel):
+    paciente_id:              UUID
+    total_medicamentos_activos: int
+    medicamentos:             List[MedicamentoResponse]
+    alertas_stock:            List[MedicamentoResponse]
+    tomas_hoy:                List[TomaResponse]
+    total_tomas_hoy:          int
+    total_tomadas_hoy:        int
+    proximo_medicamento:      Optional[dict] = None
 
 
 # ─── Toma ─────────────────────────────────────────────────────────────────────

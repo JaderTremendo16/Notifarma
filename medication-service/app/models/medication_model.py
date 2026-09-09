@@ -25,6 +25,8 @@ class Medicamento(Base):
     hora_inicio      = Column(Time, nullable=False)
     fecha_inicio     = Column(Date, nullable=True)
     fecha_fin        = Column(Date, nullable=True)
+    stock_actual     = Column(Integer, default=0, nullable=False)
+    stock_minimo_alerta = Column(Integer, default=5, nullable=False)
     activo           = Column(Boolean, default=True, nullable=False)
     created_at       = Column(DateTime, default=datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

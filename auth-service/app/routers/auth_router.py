@@ -123,4 +123,35 @@ def obtener_cuidador_de_paciente(paciente_id: str, db: Session = Depends(get_db)
     if not user:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
 
-    return {"cuidador_id": str(user.cuidador_id) if user.cuidador_id else None}
+    return {"cuidador_id": str(user.cuidador_id) if user.cuidador_id else None}
+
+
+@router.get("/cuidador/mi-paciente", response_model=UserResponse)
+def obtener_mi_paciente(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """
+    Permite a un usuario con rol 'cuidador' obtener los datos de su paciente a cargo.
+    """
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    cuidador_id = payload.get("sub")
+    paciente = db.query(User).filter(User.cuidador_id == cuidador_id).first()
+    if not paciente:
+        raise HTTPException(status_code=404, detail="No tienes ningún paciente vinculado")
+
+    return paciente
+
+
+@router.get("/internal/paciente-de/{cuidador_id}")
+def obtener_paciente_de_cuidador(cuidador_id: str, db: Session = Depends(get_db)):
+    """
+    Endpoint interno (sin JWT) para que otros servicios (como Medication Service)
+    obtengan el paciente_id asignado a un cuidador_id.
+    """
+    paciente = db.query(User).filter(User.cuidador_id == cuidador_id).first()
+    if not paciente:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado para este cuidador")
+
+    return {"paciente_id": str(paciente.id)}
+

@@ -124,45 +124,53 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 
 ### 🔐 1. Autenticación y Perfil (`/auth`)
 
-| Método | Ruta                      | Header Auth  | Descripción                                         |
-| ------ | ------------------------- | ------------ | --------------------------------------------------- |
-| `POST` | `/auth/register`          | No           | Registro de paciente o cuidador.                    |
-| `POST` | `/auth/login`             | No           | Inicia sesión y devuelve el JWT token.              |
-| `GET`  | `/auth/me`                | Bearer Token | Obtiene los datos del usuario logueado.             |
+| Método | Ruta | Header Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/auth/register` | No | Registro de paciente o cuidador. |
+| `POST` | `/auth/login` | No | Inicia sesión y devuelve el JWT token. |
+| `GET` | `/auth/me` | Bearer Token | Obtiene los datos del usuario logueado. |
 | `POST` | `/auth/vincular-cuidador` | Bearer Token | Vincula un cuidador mediante su correo electrónico. |
+| `GET` | `/auth/cuidador/mi-paciente` | Bearer Token (Cuidador) | **Para Cuidador:** Obtiene los datos y perfil de su paciente a cargo. |
+| `GET` | `/auth/internal/cuidador-de/{paciente_id}` | No (Interno) | *Uso interno:* Retorna el `cuidador_id` vinculado al paciente. |
+| `GET` | `/auth/internal/paciente-de/{cuidador_id}` | No (Interno) | *Uso interno:* Retorna el `paciente_id` vinculado al cuidador. |
 
 ---
 
-### 💊 2. Medicamentos y Tomas (`/medications`)
+### 💊 2. Medicamentos, Stock y Tomas (`/medications`)
 
-| Método   | Ruta                           | Header Auth  | Descripción                                            |
-| -------- | ------------------------------ | ------------ | ------------------------------------------------------ |
-| `POST`   | `/medications`                 | Bearer Token | Crea un nuevo medicamento.                             |
-| `GET`    | `/medications`                 | Bearer Token | Lista medicamentos activos del paciente.               |
-| `GET`    | `/medications/proximo`         | Bearer Token | **Para el Dashboard:** Próximo medicamento a tomar.    |
-| `GET`    | `/medications/{id}`            | Bearer Token | Detalle completo de un medicamento.                    |
-| `PUT`    | `/medications/{id}`            | Bearer Token | Actualiza dosis, frecuencia o fechas.                  |
-| `DELETE` | `/medications/{id}`            | Bearer Token | Eliminación suave (soft delete).                       |
-| `POST`   | `/medications/{id}/tomas`      | Bearer Token | Registra una toma (`tomado`, `omitido`, `pendiente`).  |
-| `GET`    | `/medications/tomas/historial` | Bearer Token | **Para pantalla Historial:** Registro de cumplimiento. |
+| Método | Ruta | Header Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/medications` | Bearer Token | Crea un nuevo medicamento (soporta `stock_actual` y `stock_minimo_alerta`). |
+| `GET` | `/medications` | Bearer Token | Lista medicamentos activos del paciente. |
+| `GET` | `/medications/proximo` | Bearer Token | **Para el Dashboard:** Próximo medicamento a tomar. |
+| `GET` | `/medications/stock/alertas` | Bearer Token | Lista medicamentos cuyo stock es menor o igual al mínimo. |
+| `PATCH` | `/medications/{id}/stock` | Bearer Token | **Pastillero:** Recarga o ajusta el stock actual y mínimo. |
+| `GET` | `/medications/cuidador/resumen-paciente` | Bearer Token (Cuidador) | **Dashboard Cuidador:** Resumen completo del paciente (meds, stock, tomas de hoy). |
+| `GET` | `/medications/reporte-adherencia/pdf?dias=30` | Bearer Token | **Reporte Clínico:** Descarga PDF formal de cumplimiento para consulta médica. |
+| `GET` | `/medications/{id}` | Bearer Token | Detalle completo de un medicamento. |
+| `PUT` | `/medications/{id}` | Bearer Token | Actualiza dosis, frecuencia o fechas. |
+| `DELETE` | `/medications/{id}` | Bearer Token | Eliminación suave (soft delete). |
+| `POST` | `/medications/{id}/tomas` | Bearer Token | Registra toma (`tomado`, `omitido`, `pendiente`). Resta 1 al stock si fue tomado. |
+| `GET` | `/medications/tomas/historial` | Bearer Token | **Para pantalla Historial:** Registro de cumplimiento. |
 
-#### Ejemplo crear medicamento (`POST /medications`):
-
+#### Ejemplo crear medicamento con stock (`POST /medications`):
 ```json
 {
   "nombre": "Losartán",
   "dosis": "50mg",
   "frecuencia_horas": 12,
   "hora_inicio": "08:00:00",
-  "fecha_inicio": "2026-09-01"
+  "fecha_inicio": "2026-09-01",
+  "stock_actual": 30,
+  "stock_minimo_alerta": 5
 }
 ```
 
-#### Ejemplo registrar toma (`POST /medications/{id}/tomas`):
-
+#### Ejemplo recargar stock (`PATCH /medications/{id}/stock`):
 ```json
 {
-  "estado": "tomado"
+  "stock_actual": 20,
+  "stock_minimo_alerta": 5
 }
 ```
 
@@ -170,47 +178,36 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 
 ### 🩺 3. Salud, Bienestar y Citas Médicas (`/health`)
 
-| Método   | Ruta                        | Header Auth  | Descripción                                                         |
-| -------- | --------------------------- | ------------ | ------------------------------------------------------------------- |
-| `POST`   | `/health/mood`              | Bearer Token | Registra estado de ánimo (`muy_bien`, `bien`, `regular`, `mal`).    |
-| `GET`    | `/health/mood/hoy`          | Bearer Token | Registros de ánimo de hoy del paciente.                             |
-| `GET`    | `/health/sintomas/catalogo` | No requerida | Catálogo fijo de síntomas (Dolor de cabeza, Mareo, etc.).           |
-| `POST`   | `/health/sintomas`          | Bearer Token | Registra uno o varios síntomas (admite catálogo o síntoma libre).   |
-| `GET`    | `/health/historial?dias=7`  | Bearer Token | Historial consolidado de ánimo y síntomas (últimos N días).         |
-| `GET`    | `/health/recomendacion-hoy` | Bearer Token | **Mensaje de autocuidado del día** generado por el motor de reglas. |
-| `POST`   | `/health/citas`             | Bearer Token | Agenda una nueva cita médica.                                       |
-| `GET`    | `/health/citas`             | Bearer Token | Lista las citas médicas activas y futuras del paciente.             |
-| `GET`    | `/health/citas/{id}`        | Bearer Token | Detalle completo de una cita médica.                                |
-| `DELETE` | `/health/citas/{id}`        | Bearer Token | Cancela/inactiva una cita médica.                                   |
-
-#### Ejemplo agendar cita médica (`POST /health/citas`):
-
-```json
-{
-  "especialidad": "Cardiología",
-  "medico": "Dr. Fernando Morales",
-  "lugar": "Clínica del Prado - Consultorio 402",
-  "fecha_hora": "2026-09-03T14:30:00Z",
-  "notas": "Llevar electrocardiograma previo"
-}
-```
-
-> 🔔 **Recordatorios automáticos de Citas:**
-> El Notification Service generará automáticamente dos alertas en `/notifications/pendientes`:
->
-> 1. **Con 1 día de anticipación:** _"Recordatorio: Mañana tienes tu cita médica de Cardiología."_
-> 2. **Con 1 hora de anticipación:** _"Recordatorio: En 1 hora es tu cita de Cardiología en Clínica del Prado - Consultorio 402."_
+| Método | Ruta | Header Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/health/mood` | Bearer Token | Registra estado de ánimo (`muy_bien`, `bien`, `regular`, `mal`). |
+| `GET` | `/health/mood/hoy` | Bearer Token | Registros de ánimo de hoy del paciente. |
+| `GET` | `/health/sintomas/catalogo` | No requerida | Catálogo fijo de síntomas (Dolor de cabeza, Mareo, etc.). |
+| `POST` | `/health/sintomas` | Bearer Token | Registra uno o varios síntomas (admite catálogo o síntoma libre). |
+| `GET` | `/health/historial?dias=7` | Bearer Token | Historial consolidado de ánimo y síntomas (últimos N días). |
+| `GET` | `/health/recomendacion-hoy` | Bearer Token | **Mensaje de autocuidado del día** generado por el motor de reglas. |
+| `POST` | `/health/citas` | Bearer Token | Agenda una nueva cita médica. |
+| `GET` | `/health/citas` | Bearer Token | Lista las citas médicas activas y futuras del paciente. |
+| `GET` | `/health/citas/{id}` | Bearer Token | Detalle completo de una cita médica. |
+| `DELETE` | `/health/citas/{id}` | Bearer Token | Cancela/inactiva una cita médica. |
 
 ---
 
-### 🔔 4. Notificaciones y Recordatorios (`/notifications`)
+### 🔔 4. Notificaciones, Recordatorios y Alertas de Stock (`/notifications`)
 
-El microservicio genera automáticamente los recordatorios de medicamentos según el horario del paciente.
+El microservicio genera automáticamente recordatorios de medicamentos, citas y alertas de stock bajo.
 
-| Método | Ruta                            | Header Auth  | Descripción                                               |
-| ------ | ------------------------------- | ------------ | --------------------------------------------------------- |
-| `GET`  | `/notifications/pendientes`     | Bearer Token | **Polling periódico:** Consulta recordatorios pendientes. |
-| `POST` | `/notifications/{id}/confirmar` | Bearer Token | El usuario confirma que tomó/atendió la alerta.           |
+| Método | Ruta | Header Auth | Descripción |
+|---|---|---|---|
+| `GET` | `/notifications/pendientes` | Bearer Token | **Polling periódico:** Consulta notificaciones pendientes dirigidas a este usuario (`destinatario_id`). |
+| `POST` | `/notifications/{id}/confirmar` | Bearer Token | El usuario (paciente o cuidador) confirma que atendió la alerta. |
+
+#### 🛡️ Alerta de Stock Bajo (Paciente y Cuidador):
+Cuando una toma es marcada como `tomado` y el `stock_actual` disminuye hasta ser `<= stock_minimo_alerta`:
+1. El **Paciente** recibe: *"Atención: Te quedan solo {X} dosis de {Medicamento}. Recuerda surtir tu receta."*
+2. El **Cuidador** recibe: *"Alerta de Stock: A tu familiar le quedan solo {X} dosis de {Medicamento}. Recuerda surtir el medicamento."*
+Ambos usuarios ven la alerta en su respectivo `GET /notifications/pendientes`.
+
 
 #### Cómo implementarlo en Flutter:
 

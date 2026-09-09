@@ -28,3 +28,11 @@ class NotificacionResponse(BaseModel):
 class NotificacionConfirmarResponse(BaseModel):
     message:      str
     notificacion: NotificacionResponse
+
+
+class AlertaStockRequest(BaseModel):
+    paciente_id:        UUID
+    medicamento_id:     UUID
+    medicamento_nombre: str
+    stock_actual:       int
+
