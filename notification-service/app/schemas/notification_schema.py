@@ -10,6 +10,8 @@ from app.models.notification_model import TipoNotificacion, EstadoNotificacion
 class NotificacionResponse(BaseModel):
     id:                        UUID
     paciente_id:               UUID
+    destinatario_id:           UUID
+    es_alerta_cuidador:        bool
     tipo:                      TipoNotificacion
     referencia_id:             UUID
     mensaje:                   str

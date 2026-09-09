@@ -3,7 +3,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, Enum
+from sqlalchemy import Column, String, Integer, DateTime, Enum, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
 
@@ -24,6 +24,8 @@ class Notificacion(Base):
 
     id                        = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     paciente_id               = Column(UUID(as_uuid=True), nullable=False, index=True)
+    destinatario_id           = Column(UUID(as_uuid=True), nullable=False, index=True)
+    es_alerta_cuidador        = Column(Boolean, default=False, nullable=False)
     tipo                      = Column(
                                     Enum(TipoNotificacion, name="tipo_notificacion_enum"),
                                     nullable=False

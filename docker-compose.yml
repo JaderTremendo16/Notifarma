@@ -84,6 +84,7 @@ services:
     container_name: notifarma-notification
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/notification_db
+      AUTH_SERVICE_URL: http://auth-service:8000
       MEDICATION_SERVICE_URL: http://medication-service:8002
       HEALTH_SERVICE_URL: http://health-service:8003
     ports:
@@ -91,6 +92,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      auth-service:
+        condition: service_started
       medication-service:
         condition: service_started
       health-service:

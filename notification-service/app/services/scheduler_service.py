@@ -12,6 +12,7 @@ from app.models.notification_model import Notificacion, TipoNotificacion, Estado
 logger = logging.getLogger("notification_scheduler")
 logging.basicConfig(level=logging.INFO)
 
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 MEDICATION_SERVICE_URL = os.getenv("MEDICATION_SERVICE_URL", "http://medication-service:8002")
 HEALTH_SERVICE_URL = os.getenv("HEALTH_SERVICE_URL", "http://health-service:8003")
 CHECK_INTERVAL_MINUTES = int(os.getenv("CHECK_INTERVAL_MINUTES", "5"))
@@ -26,6 +27,10 @@ def sincronizar_notificaciones():
        - Recordatorio con 1 día de anticipación (ventana ~24 horas antes).
        - Recordatorio con 1 hora de anticipación (ventana ~1 hora antes).
     3. Revisa reintentos para notificaciones pendientes sin confirmar (>15 min).
+       - Si una notificación de medicamento del paciente (es_alerta_cuidador = false)
+         llega a intentos = 2 (a punto de generar el 3er intento), se consulta al
+         Auth Service para verificar si tiene un cuidador vinculado. De existir,
+         se genera una alerta al cuidador (es_alerta_cuidador = true).
     """
     logger.info("Ejecutando proceso de sincronización de notificaciones...")
     db = SessionLocal()
@@ -61,6 +66,7 @@ def sincronizar_notificaciones():
                     if ventana_inicio <= toma_programada <= ventana_fin:
                         ya_existe = db.query(Notificacion).filter(
                             Notificacion.paciente_id == paciente_id,
+                            Notificacion.destinatario_id == paciente_id,
                             Notificacion.referencia_id == med_id,
                             Notificacion.tipo == TipoNotificacion.medicamento,
                             Notificacion.fecha_hora_programada == toma_programada
@@ -69,6 +75,8 @@ def sincronizar_notificaciones():
                         if not ya_existe:
                             nueva_notif = Notificacion(
                                 paciente_id=paciente_id,
+                                destinatario_id=paciente_id,
+                                es_alerta_cuidador=False,
                                 tipo=TipoNotificacion.medicamento,
                                 referencia_id=med_id,
                                 mensaje=f"Hora de tomar tu medicamento: {nombre}",
@@ -111,6 +119,7 @@ def sincronizar_notificaciones():
                     mensaje_1dia = f"Recordatorio: Mañana tienes tu cita médica de {especialidad}."
                     ya_notif_1dia = db.query(Notificacion).filter(
                         Notificacion.paciente_id == paciente_id,
+                        Notificacion.destinatario_id == paciente_id,
                         Notificacion.referencia_id == cita_id,
                         Notificacion.tipo == TipoNotificacion.cita,
                         Notificacion.mensaje.like("Recordatorio: Mañana%")
@@ -119,6 +128,8 @@ def sincronizar_notificaciones():
                     if not ya_notif_1dia:
                         db.add(Notificacion(
                             paciente_id=paciente_id,
+                            destinatario_id=paciente_id,
+                            es_alerta_cuidador=False,
                             tipo=TipoNotificacion.cita,
                             referencia_id=cita_id,
                             mensaje=mensaje_1dia,
@@ -134,6 +145,7 @@ def sincronizar_notificaciones():
                     mensaje_1hora = f"Recordatorio: En 1 hora es tu cita de {especialidad} en {lugar}."
                     ya_notif_1hora = db.query(Notificacion).filter(
                         Notificacion.paciente_id == paciente_id,
+                        Notificacion.destinatario_id == paciente_id,
                         Notificacion.referencia_id == cita_id,
                         Notificacion.tipo == TipoNotificacion.cita,
                         Notificacion.mensaje.like("Recordatorio: En 1 hora%")
@@ -142,6 +154,8 @@ def sincronizar_notificaciones():
                     if not ya_notif_1hora:
                         db.add(Notificacion(
                             paciente_id=paciente_id,
+                            destinatario_id=paciente_id,
+                            es_alerta_cuidador=False,
                             tipo=TipoNotificacion.cita,
                             referencia_id=cita_id,
                             mensaje=mensaje_1hora,
@@ -156,15 +170,54 @@ def sincronizar_notificaciones():
                 logger.error(f"Error procesando cita {c}: {cita_err}")
 
         # ──────────────────────────────────────────────────────────
-        # 3. Reintentos de notificaciones pendientes sin confirmar
+        # 3. Reintentos y Escalado al Cuidador
         # ──────────────────────────────────────────────────────────
         umbral_reintento = ahora - timedelta(minutes=15)
         pendientes_a_reintentar = db.query(Notificacion).filter(
             Notificacion.estado == EstadoNotificacion.pendiente,
-            Notificacion.fecha_hora_ultimo_intento <= umbral_reintento
+            Notificacion.fecha_hora_ultimo_intento <= umbral_reintento,
+            Notificacion.es_alerta_cuidador == False  # Las alertas al cuidador no reintentan
         ).all()
 
         for notif in pendientes_a_reintentar:
+            # Si está en intentos = 2 (a punto de generarse el tercer recordatorio) y es de tipo medicamento:
+            if notif.intentos == 2 and notif.tipo == TipoNotificacion.medicamento:
+                try:
+                    with httpx.Client(timeout=10.0) as client:
+                        res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/cuidador-de/{notif.paciente_id}")
+                        if res_auth.status_code == 200:
+                            data_auth = res_auth.json()
+                            cuidador_id = data_auth.get("cuidador_id")
+                            if cuidador_id:
+                                # Verificar que no se haya creado previamente la alerta al cuidador por este evento
+                                alerta_existente = db.query(Notificacion).filter(
+                                    Notificacion.referencia_id == notif.referencia_id,
+                                    Notificacion.destinatario_id == cuidador_id,
+                                    Notificacion.es_alerta_cuidador == True,
+                                    Notificacion.fecha_hora_programada == notif.fecha_hora_programada
+                                ).first()
+
+                                if not alerta_existente:
+                                    # Extraer nombre si está en el mensaje
+                                    nombre_med = notif.mensaje.replace("Hora de tomar tu medicamento: ", "")
+                                    mensaje_cuidador = f"Tu familiar no ha confirmado la toma de {nombre_med} después de 2 recordatorios."
+                                    alerta_cuidador = Notificacion(
+                                        paciente_id=notif.paciente_id,
+                                        destinatario_id=cuidador_id,
+                                        es_alerta_cuidador=True,
+                                        tipo=TipoNotificacion.medicamento,
+                                        referencia_id=notif.referencia_id,
+                                        mensaje=mensaje_cuidador,
+                                        fecha_hora_programada=notif.fecha_hora_programada,
+                                        estado=EstadoNotificacion.pendiente,
+                                        intentos=1,
+                                        fecha_hora_ultimo_intento=ahora
+                                    )
+                                    db.add(alerta_cuidador)
+                                    logger.info(f"Alerta escalada al cuidador {cuidador_id} para paciente {notif.paciente_id}")
+                except Exception as esc_err:
+                    logger.error(f"Error al intentar escalar alerta al cuidador para paciente {notif.paciente_id}: {esc_err}")
+
             notif.intentos += 1
             notif.fecha_hora_ultimo_intento = ahora
 

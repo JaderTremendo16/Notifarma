@@ -25,14 +25,14 @@ def _get_paciente_id(request: Request) -> str:
 @router.get("/pendientes", response_model=List[NotificacionResponse])
 def listar_pendientes(request: Request, db: Session = Depends(get_db)):
     """
-    Lista las notificaciones pendientes del paciente autenticado.
-    El cliente móvil consulta este endpoint mediante POLLING periódico.
+    Lista las notificaciones pendientes del usuario autenticado (paciente o cuidador).
+    Filtra por destinatario_id según el header X-User-Id inyectado por el API Gateway.
     """
-    paciente_id = _get_paciente_id(request)
+    destinatario_id = _get_paciente_id(request)
     notificaciones = (
         db.query(Notificacion)
         .filter(
-            Notificacion.paciente_id == paciente_id,
+            Notificacion.destinatario_id == destinatario_id,
             Notificacion.estado == EstadoNotificacion.pendiente
         )
         .order_by(Notificacion.fecha_hora_programada.asc())
@@ -44,15 +44,15 @@ def listar_pendientes(request: Request, db: Session = Depends(get_db)):
 @router.post("/{id}/confirmar", response_model=NotificacionConfirmarResponse)
 def confirmar_notificacion(id: UUID, request: Request, db: Session = Depends(get_db)):
     """
-    El paciente confirma que atendió/vio la notificación.
+    El usuario (paciente o cuidador destinatario) confirma que atendió/vio la notificación.
     Cambia el estado a 'confirmada', deteniendo reintentos posteriores.
     """
-    paciente_id = _get_paciente_id(request)
+    usuario_id = _get_paciente_id(request)
     notif = (
         db.query(Notificacion)
         .filter(
             Notificacion.id == id,
-            Notificacion.paciente_id == paciente_id
+            (Notificacion.destinatario_id == usuario_id) | (Notificacion.paciente_id == usuario_id)
         )
         .first()
     )

@@ -111,3 +111,16 @@ def vincular_cuidador(
     db.refresh(paciente)
 
     return {"message": f"Cuidador {cuidador.nombres} vinculado correctamente"}
+
+
+@router.get("/internal/cuidador-de/{paciente_id}")
+def obtener_cuidador_de_paciente(paciente_id: str, db: Session = Depends(get_db)):
+    """
+    Endpoint interno (sin JWT) para que otros microservicios (como Notification Service)
+    consulten si un paciente tiene un cuidador vinculado.
+    """
+    user = db.query(User).filter(User.id == paciente_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    return {"cuidador_id": str(user.cuidador_id) if user.cuidador_id else None}
