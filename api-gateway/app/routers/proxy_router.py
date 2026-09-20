@@ -47,6 +47,7 @@ async def _forward_request(request: Request, target_url: str, user_id: str | Non
     """Reenvía la petición al microservicio de destino inyectando X-User-Id si aplica."""
     headers = dict(request.headers)
     headers.pop("host", None)
+    headers.pop("content-length", None)
 
     if user_id:
         headers["X-User-Id"] = user_id
@@ -63,16 +64,27 @@ async def _forward_request(request: Request, target_url: str, user_id: str | Non
             content=body,
         )
 
+    # Excluir cabeceras hop-by-hop o que puedan causar conflicto
+    excluded_headers = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    resp_headers = {
+        k: v for k, v in response.headers.items()
+        if k.lower() not in excluded_headers
+    }
+
     return Response(
         content=response.content,
         status_code=response.status_code,
+        headers=resp_headers,
         media_type=response.headers.get("content-type"),
     )
 
 
 # ─── Auth Service Proxy ───────────────────────────────────────────────────────
-@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy_auth(path: str, request: Request):
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
+
     user_id = None
     if path not in PUBLIC_AUTH_PATHS:
         user_id = _extract_user_id(request)
@@ -82,10 +94,12 @@ async def proxy_auth(path: str, request: Request):
 
 
 # ─── Medication Service Proxy ─────────────────────────────────────────────────
-@router.api_route("/medications", methods=["GET", "POST", "PUT", "DELETE"])
-@router.api_route("/medications/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@router.api_route("/medications", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@router.api_route("/medications/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy_medications(request: Request, path: str = ""):
-    # Rutas internas directas como /medications/internal/* no deberían exponerse públicamente o no requieren user_id
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
+
     user_id = None
     if not path.startswith("internal/"):
         user_id = _extract_user_id(request)
@@ -96,8 +110,11 @@ async def proxy_medications(request: Request, path: str = ""):
 
 
 # ─── Health Service Proxy ─────────────────────────────────────────────────────
-@router.api_route("/health/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@router.api_route("/health/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy_health(path: str, request: Request):
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
+
     user_id = None
     if path not in PUBLIC_HEALTH_PATHS:
         user_id = _extract_user_id(request)
@@ -107,11 +124,14 @@ async def proxy_health(path: str, request: Request):
 
 
 # ─── Notification Service Proxy ───────────────────────────────────────────────
-@router.api_route("/notifications/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@router.api_route("/notifications/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy_notifications(path: str, request: Request):
+    if request.method == "OPTIONS":
+        return Response(status_code=200)
+
     user_id = None
     if not path.startswith("internal/"):
         user_id = _extract_user_id(request)
 
     target_url = f"{NOTIFICATION_SERVICE_URL}/notifications/{path}"
-    return await _forward_request(request, target_url, user_id)
+    return await _forward_request(request, target_url, user_id)

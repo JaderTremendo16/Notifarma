@@ -55,17 +55,6 @@ class MedicamentoResponse(BaseModel):
         from_attributes = True
 
 
-class ResumenCuidadorResponse(BaseModel):
-    paciente_id:              UUID
-    total_medicamentos_activos: int
-    medicamentos:             List[MedicamentoResponse]
-    alertas_stock:            List[MedicamentoResponse]
-    tomas_hoy:                List[TomaResponse]
-    total_tomas_hoy:          int
-    total_tomadas_hoy:        int
-    proximo_medicamento:      Optional[dict] = None
-
-
 # ─── Toma ─────────────────────────────────────────────────────────────────────
 
 class TomaCreate(BaseModel):
@@ -84,6 +73,19 @@ class TomaResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ─── Resumen Cuidador ─────────────────────────────────────────────────────────
+
+class ResumenCuidadorResponse(BaseModel):
+    paciente_id:              UUID
+    total_medicamentos_activos: int
+    medicamentos:             List[MedicamentoResponse]
+    alertas_stock:            List[MedicamentoResponse]
+    tomas_hoy:                List[TomaResponse]
+    total_tomas_hoy:          int
+    total_tomadas_hoy:        int
+    proximo_medicamento:      Optional[dict] = None
 
 
 # ─── Respuestas especiales ────────────────────────────────────────────────────
