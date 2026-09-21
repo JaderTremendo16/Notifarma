@@ -223,11 +223,101 @@ def sincronizar_notificaciones():
 
         db.commit()
 
+        # ──────────────────────────────────────────────────────────
+        # 4. Evaluación Predictiva de Agotamiento de Stock (Proactivo)
+        # ──────────────────────────────────────────────────────────
+        evaluar_agotamiento_preventivo_stock(db, ahora)
+
     except Exception as general_err:
         logger.error(f"Error general en sincronizar_notificaciones: {general_err}")
         db.rollback()
     finally:
         db.close()
+
+
+def evaluar_agotamiento_preventivo_stock(db, ahora):
+    """
+    Cron / Tarea proactiva:
+    Consulta Medication Service para saber a qué medicamentos les quedan <= 3 días de pastillas.
+    Si detecta riesgo de desabastecimiento, genera una notificación preventiva tanto al paciente
+    como a su cuidador (evitando duplicar si ya se envió en las últimas 24 horas).
+    """
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            res_pred = client.get(f"{MEDICATION_SERVICE_URL}/medications/internal/prediccion-agotamiento")
+            medicamentos = res_pred.json() if res_pred.status_code == 200 else []
+    except Exception as e:
+        logger.error(f"Error al conectar con predicción de stock ({MEDICATION_SERVICE_URL}): {e}")
+        return
+
+    umbral_24h = ahora - timedelta(hours=24)
+
+    for item in medicamentos:
+        try:
+            dias_restantes = item["dias_restantes"]
+            if dias_restantes <= 3.0 and item["stock_actual"] > 0:
+                paciente_id = item["paciente_id"]
+                med_id = item["medicamento_id"]
+                nombre_med = item["nombre"]
+                fecha_est = item["fecha_estimada"]
+
+                # Verificar si ya se envió alerta preventiva recientemente (< 24 horas)
+                ya_notificado = db.query(Notificacion).filter(
+                    Notificacion.referencia_id == med_id,
+                    Notificacion.paciente_id == paciente_id,
+                    Notificacion.mensaje.like("Aviso preventivo:%"),
+                    Notificacion.created_at >= umbral_24h
+                ).first()
+
+                if not ya_notificado:
+                    # 1. Notificación preventiva al PACIENTE
+                    msg_paciente = (
+                        f"Aviso preventivo: Al ritmo actual, tus pastillas de {nombre_med} se agotarán en "
+                        f"{dias_restantes} días (aprox. {fecha_est}). Recuerda pedir tu fórmula médica a tiempo."
+                    )
+                    db.add(Notificacion(
+                        paciente_id=paciente_id,
+                        destinatario_id=paciente_id,
+                        es_alerta_cuidador=False,
+                        tipo=TipoNotificacion.medicamento,
+                        referencia_id=med_id,
+                        mensaje=msg_paciente,
+                        fecha_hora_programada=ahora,
+                        estado=EstadoNotificacion.pendiente,
+                        intentos=1,
+                        fecha_hora_ultimo_intento=ahora
+                    ))
+
+                    # 2. Notificación preventiva al CUIDADOR (si existe)
+                    try:
+                        with httpx.Client(timeout=5.0) as client_auth:
+                            res_auth = client_auth.get(f"{AUTH_SERVICE_URL}/auth/internal/cuidador-de/{paciente_id}")
+                            if res_auth.status_code == 200:
+                                cuidador_id = res_auth.json().get("cuidador_id")
+                                if cuidador_id:
+                                    msg_cuidador = (
+                                        f"Aviso preventivo: Al ritmo actual, las pastillas de {nombre_med} de tu familiar se agotarán en "
+                                        f"{dias_restantes} días (aprox. {fecha_est})."
+                                    )
+                                    db.add(Notificacion(
+                                        paciente_id=paciente_id,
+                                        destinatario_id=cuidador_id,
+                                        es_alerta_cuidador=True,
+                                        tipo=TipoNotificacion.medicamento,
+                                        referencia_id=med_id,
+                                        mensaje=msg_cuidador,
+                                        fecha_hora_programada=ahora,
+                                        estado=EstadoNotificacion.pendiente,
+                                        intentos=1,
+                                        fecha_hora_ultimo_intento=ahora
+                                    ))
+                    except Exception as err_cuid:
+                        logger.error(f"Error consultando cuidador para alerta preventiva de {nombre_med}: {err_cuid}")
+
+                    db.commit()
+                    logger.info(f"Alerta preventiva de agotamiento creada para {nombre_med} (Paciente {paciente_id})")
+        except Exception as item_err:
+            logger.error(f"Error procesando predicción para item {item}: {item_err}")
 
 
 def iniciar_scheduler():
@@ -250,3 +340,4 @@ def detener_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("APScheduler detenido.")
+

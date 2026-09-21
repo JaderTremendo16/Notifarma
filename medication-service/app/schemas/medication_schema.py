@@ -103,3 +103,29 @@ class HorarioActivoItem(BaseModel):
     nombre:          str
     frecuencia_horas: int
     hora_inicio:     str  # se serializa como string "HH:MM:SS" para compatibilidad JSON
+
+
+# ─── Auditoría y Predicción ───────────────────────────────────────────────────
+
+class RegistroAuditoriaResponse(BaseModel):
+    id:          UUID
+    paciente_id: UUID
+    usuario_id:  UUID
+    accion:      str
+    detalle:     Optional[str] = None
+    fecha_hora:  datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PrediccionAgotamientoItem(BaseModel):
+    medicamento_id:   UUID
+    paciente_id:      UUID
+    nombre:           str
+    stock_actual:     int
+    frecuencia_horas: int
+    tomas_por_dia:    float
+    dias_restantes:   float
+    fecha_estimada:   str  # "YYYY-MM-DD"
+

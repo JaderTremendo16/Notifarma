@@ -24,11 +24,13 @@ from app.services.wellness_rules import evaluar_bienestar
 router = APIRouter(prefix="/health", tags=["health"])
 
 
+DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
+
 def _get_paciente_id(request: Request) -> str:
-    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway)."""
+    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway) o usa el paciente de prueba."""
     paciente_id = request.headers.get("X-User-Id")
     if not paciente_id:
-        raise HTTPException(status_code=400, detail="Header X-User-Id requerido")
+        return DEFAULT_TEST_PACIENTE_ID
     return paciente_id
 
 

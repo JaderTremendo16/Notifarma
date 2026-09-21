@@ -17,13 +17,14 @@ class UserCreate(BaseModel):
     edad: Optional[int] = None
     contacto_emergencia_nombre: Optional[str] = None
     contacto_emergencia_telefono: Optional[str] = None
-    pass
+    zona_horaria: Optional[str] = "America/Bogota"
+
 
 # 2. Login (Lo que entra al iniciar sesión)
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    pass
+
 
 # 3. Respuesta (Lo que devuelve el backend al cliente)
 class UserResponse(BaseModel):
@@ -32,6 +33,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     rol: RolUsuario
     cuidador_id: Optional[UUID] = None
+    zona_horaria: str = "America/Bogota"
     #opcionales
     edad: Optional[int] = None
     contacto_emergencia_nombre: Optional[str] = None
@@ -40,3 +42,15 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# 4. Códigos de vinculación
+class GenerarCodigoResponse(BaseModel):
+    codigo: str
+    rol_generador: RolUsuario
+    expira_en_minutos: int
+    fecha_expiracion: datetime
+
+
+class VincularCodigoRequest(BaseModel):
+    codigo: str

@@ -46,3 +46,15 @@ class Toma(Base):
                              )
     fecha_hora_confirmacion = Column(DateTime, nullable=True)
     created_at             = Column(DateTime, default=datetime.utcnow)
+
+
+class RegistroAuditoria(Base):
+    __tablename__ = "auditoria_medica"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    paciente_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    usuario_id  = Column(UUID(as_uuid=True), nullable=False)
+    accion      = Column(String, nullable=False)  # Ej: REGISTRO_TOMA, RECARGA_STOCK, CREACION_MEDICAMENTO
+    detalle     = Column(String, nullable=True)
+    fecha_hora  = Column(DateTime, default=datetime.utcnow, nullable=False)
+

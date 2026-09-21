@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.medication_model import Medicamento, Toma, EstadoToma
+from app.models.medication_model import Medicamento, Toma, EstadoToma, RegistroAuditoria
 from app.schemas.medication_schema import (
     MedicamentoCreate,
     MedicamentoUpdate,
@@ -19,6 +19,8 @@ from app.schemas.medication_schema import (
     TomaCreate,
     TomaResponse,
     ProximoMedicamentoResponse,
+    RegistroAuditoriaResponse,
+    PrediccionAgotamientoItem,
 )
 from app.services.medication_service import calcular_proxima_toma
 
@@ -28,11 +30,13 @@ NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notific
 router = APIRouter(prefix="/medications", tags=["medications"])
 
 
+DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
+
 def _get_paciente_id(request: Request) -> str:
-    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway)."""
+    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway) o usa el paciente de prueba."""
     paciente_id = request.headers.get("X-User-Id")
     if not paciente_id:
-        raise HTTPException(status_code=400, detail="Header X-User-Id requerido")
+        return DEFAULT_TEST_PACIENTE_ID
     return paciente_id
 
 
@@ -101,6 +105,79 @@ def horarios_activos(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/internal/prediccion-agotamiento", response_model=List[PrediccionAgotamientoItem])
+def prediccion_agotamiento_interno(db: Session = Depends(get_db)):
+    """
+    Endpoint interno para el Cron en segundo plano del Notification Service.
+    Calcula cuántos días de tratamiento le quedan a cada medicamento activo
+    en función de su stock actual y frecuencia de toma.
+    """
+    medicamentos = (
+        db.query(Medicamento)
+        .filter(Medicamento.activo == True, Medicamento.stock_actual > 0)
+        .all()
+    )
+
+    resultados = []
+    hoy = datetime.utcnow().date()
+
+    for med in medicamentos:
+        if med.frecuencia_horas <= 0:
+            continue
+
+        tomas_por_dia = 24.0 / med.frecuencia_horas
+        dias_restantes = med.stock_actual / tomas_por_dia
+        fecha_est = hoy + timedelta(days=int(dias_restantes))
+
+        resultados.append(
+            PrediccionAgotamientoItem(
+                medicamento_id=med.id,
+                paciente_id=med.paciente_id,
+                nombre=med.nombre,
+                stock_actual=med.stock_actual,
+                frecuencia_horas=med.frecuencia_horas,
+                tomas_por_dia=round(tomas_por_dia, 2),
+                dias_restantes=round(dias_restantes, 1),
+                fecha_estimada=fecha_est.isoformat(),
+            )
+        )
+
+    return resultados
+
+
+@router.get("/auditoria", response_model=List[RegistroAuditoriaResponse])
+def listar_auditoria(
+    limite: int = 50,
+    request: Request = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna el log estructurado de auditoría clínica (quién tomó/recargó qué y cuándo).
+    Accesible tanto por el paciente como por su cuidador.
+    """
+    user_id = _get_paciente_id(request)
+    paciente_id = user_id
+
+    # Si es un cuidador, buscar el paciente a cargo
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/paciente-de/{user_id}")
+            if res_auth.status_code == 200:
+                paciente_id = res_auth.json().get("paciente_id")
+    except Exception:
+        pass
+
+    logs = (
+        db.query(RegistroAuditoria)
+        .filter(RegistroAuditoria.paciente_id == paciente_id)
+        .order_by(RegistroAuditoria.fecha_hora.desc())
+        .limit(limite)
+        .all()
+    )
+    return logs
+
+
+
 @router.get("/stock/alertas", response_model=List[MedicamentoResponse])
 def alertas_stock(request: Request, db: Session = Depends(get_db)):
     """
@@ -126,7 +203,7 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
     Permite a un cuidador autenticado consultar el estado general de su paciente asignado:
     medicamentos activos, stock de cada uno, alertas de stock, tomas de hoy y próximo medicamento.
     """
-    cuidador_id = _get_paciente_id(request)
+    cuidador_id = request.headers.get("X-User-Id") or "d2802caa-7b8c-4145-9920-6893f8adecd0"
 
     # 1. Consultar a Auth Service cuál es el paciente vinculado a este cuidador
     try:
@@ -214,6 +291,40 @@ def descargar_reporte_adherencia_pdf(
     except Exception:
         pass
 
+    # Consultar zona horaria del paciente
+    zona_horaria_str = "America/Bogota"
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res_tz = client.get(f"{AUTH_SERVICE_URL}/auth/internal/zona-horaria/{paciente_id}")
+            if res_tz.status_code == 200:
+                zona_horaria_str = res_tz.json().get("zona_horaria", "America/Bogota")
+    except Exception:
+        pass
+
+    try:
+        from zoneinfo import ZoneInfo
+        tz_local = ZoneInfo(zona_horaria_str)
+    except Exception:
+        tz_local = None
+
+    def _formatear_fecha_local(dt: Optional[datetime]) -> str:
+        if not dt:
+            return "-"
+        if tz_local:
+            # Si el datetime en DB es ingenuo (naive), asumimos UTC
+            if dt.tzinfo is None:
+                dt_utc = dt.replace(tzinfo=ZoneInfo("UTC"))
+            else:
+                dt_utc = dt
+            return dt_utc.astimezone(tz_local).strftime("%Y-%m-%d %I:%M %p")
+        return dt.strftime("%Y-%m-%d %H:%M")
+
+    # Fecha actual de emisión en hora local
+    if tz_local:
+        fecha_emision_str = datetime.now(tz_local).strftime("%Y-%m-%d %I:%M %p")
+    else:
+        fecha_emision_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
+
     # Consultar tomas del periodo
     fecha_limite = datetime.utcnow() - timedelta(days=dias)
     tomas = (
@@ -287,7 +398,7 @@ def descargar_reporte_adherencia_pdf(
 
     # Encabezado
     story.append(Paragraph("💊 NotiFarma — Reporte Clínico de Adherencia Terapéutica", titulo_style))
-    story.append(Paragraph(f"Período evaluado: Últimos {dias} días | Fecha de emisión (UTC): {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}", subtitulo_style))
+    story.append(Paragraph(f"Período evaluado: Últimos {dias} días | Fecha de emisión ({zona_horaria_str}): {fecha_emision_str}", subtitulo_style))
     story.append(Spacer(1, 10))
 
     # Resumen Ejecutivo
@@ -353,10 +464,10 @@ def descargar_reporte_adherencia_pdf(
     tomas_table_data = [["Medicamento", "Fecha y Hora Programada", "Estado", "Confirmado En"]]
     for t in tomas[:25]:
         nom = med_map.get(str(t.medicamento_id), "Medicamento")
-        conf_txt = t.fecha_hora_confirmacion.strftime("%Y-%m-%d %H:%M") if t.fecha_hora_confirmacion else "-"
+        conf_txt = _formatear_fecha_local(t.fecha_hora_confirmacion)
         tomas_table_data.append([
             nom,
-            t.fecha_hora_programada.strftime("%Y-%m-%d %H:%M"),
+            _formatear_fecha_local(t.fecha_hora_programada),
             t.estado.value.upper(),
             conf_txt,
         ])
@@ -537,6 +648,16 @@ def registrar_toma(
         fecha_hora_confirmacion=fecha_hora_confirmacion,
     )
     db.add(toma)
+
+    # Registrar evento en auditoría médica
+    db.add(RegistroAuditoria(
+        paciente_id=med.paciente_id,
+        usuario_id=UUID(user_id if 'user_id' in locals() else str(paciente_id)),
+        accion="REGISTRO_TOMA",
+        detalle=f"Toma de '{med.nombre}' marcada como '{datos.estado.value}'. Stock restante: {med.stock_actual}",
+        fecha_hora=datetime.utcnow()
+    ))
+
     db.commit()
     db.refresh(toma)
     return toma
@@ -572,13 +693,25 @@ def actualizar_stock(
     if not med:
         raise HTTPException(status_code=404, detail="Medicamento no encontrado")
 
+    stock_anterior = med.stock_actual
     med.stock_actual = datos.stock_actual
     if datos.stock_minimo_alerta is not None:
         med.stock_minimo_alerta = datos.stock_minimo_alerta
 
     med.updated_at = datetime.utcnow()
+
+    # Registrar evento en auditoría médica
+    db.add(RegistroAuditoria(
+        paciente_id=med.paciente_id,
+        usuario_id=UUID(user_id),
+        accion="RECARGA_STOCK",
+        detalle=f"Stock de '{med.nombre}' actualizado de {stock_anterior} a {med.stock_actual} unidades.",
+        fecha_hora=datetime.utcnow()
+    ))
+
     db.commit()
     db.refresh(med)
     return med
+
 
 

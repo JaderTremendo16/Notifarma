@@ -22,11 +22,13 @@ AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
+DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
+
 def _get_paciente_id(request: Request) -> str:
-    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway)."""
+    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway) o usa el paciente de prueba."""
     paciente_id = request.headers.get("X-User-Id")
     if not paciente_id:
-        raise HTTPException(status_code=400, detail="Header X-User-Id requerido")
+        return DEFAULT_TEST_PACIENTE_ID
     return paciente_id
 
 

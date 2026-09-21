@@ -122,21 +122,27 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 
 ## 📚 Catálogo de Endpoints (vía API Gateway: `http://localhost:8001`)
 
-### 🔐 1. Autenticación y Perfil (`/auth`)
+### 🔐 1. Autenticación, Perfil y Vinculación Accesible (`/auth`)
 
 | Método | Ruta | Header Auth | Descripción |
 |---|---|---|---|
-| `POST` | `/auth/register` | No | Registro de paciente o cuidador. |
+| `POST` | `/auth/register` | No | Registro de paciente o cuidador (soporta `zona_horaria`, ej: `"America/Bogota"`). |
 | `POST` | `/auth/login` | No | Inicia sesión y devuelve el JWT token. |
 | `GET` | `/auth/me` | Bearer Token | Obtiene los datos del usuario logueado. |
-| `POST` | `/auth/vincular-cuidador` | Bearer Token | Vincula un cuidador mediante su correo electrónico. |
+| `POST` | `/auth/generar-codigo` | Bearer Token | **Accesibilidad:** Genera un código corto de 6 caracteres (ej: `NF-4829`) para emparejar. |
+| `POST` | `/auth/vincular-codigo` | Bearer Token | **Accesibilidad:** Canjea el código `{"codigo": "NF-4829"}` para vincularse de inmediato. |
+| `POST` | `/auth/vincular-cuidador` | Bearer Token | Vincula un cuidador mediante su correo electrónico (método tradicional). |
 | `GET` | `/auth/cuidador/mi-paciente` | Bearer Token (Cuidador) | **Para Cuidador:** Obtiene los datos y perfil de su paciente a cargo. |
 | `GET` | `/auth/internal/cuidador-de/{paciente_id}` | No (Interno) | *Uso interno:* Retorna el `cuidador_id` vinculado al paciente. |
 | `GET` | `/auth/internal/paciente-de/{cuidador_id}` | No (Interno) | *Uso interno:* Retorna el `paciente_id` vinculado al cuidador. |
 
+> 💡 **Flujo Accesible de Vinculación por Código:**
+> - El paciente o el cuidador presiona *"Vincular familiar"* en la app y el backend genera `NF-4829`.
+> - La otra parte solo digita el código de 6 caracteres y quedan vinculados instantáneamente, sin necesidad de recordar correos largos.
+
 ---
 
-### 💊 2. Medicamentos, Stock y Tomas (`/medications`)
+### 💊 2. Medicamentos, Stock, Auditoría y Tomas (`/medications`)
 
 | Método | Ruta | Header Auth | Descripción |
 |---|---|---|---|
@@ -144,14 +150,17 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 | `GET` | `/medications` | Bearer Token | Lista medicamentos activos del paciente. |
 | `GET` | `/medications/proximo` | Bearer Token | **Para el Dashboard:** Próximo medicamento a tomar. |
 | `GET` | `/medications/stock/alertas` | Bearer Token | Lista medicamentos cuyo stock es menor o igual al mínimo. |
-| `PATCH` | `/medications/{id}/stock` | Bearer Token | **Pastillero:** Recarga o ajusta el stock actual y mínimo. |
+| `PATCH` | `/medications/{id}/stock` | Bearer Token | **Pastillero:** Recarga o ajusta el stock actual y mínimo. Registra auditoría. |
+| `GET` | `/medications/auditoria` | Bearer Token | **Trazabilidad Médica:** Historial de quién tomó o recargó medicamentos con fecha y hora. |
 | `GET` | `/medications/cuidador/resumen-paciente` | Bearer Token (Cuidador) | **Dashboard Cuidador:** Resumen completo del paciente (meds, stock, tomas de hoy). |
 | `GET` | `/medications/reporte-adherencia/pdf?dias=30` | Bearer Token | **Reporte Clínico:** Descarga PDF formal de cumplimiento para consulta médica. |
 | `GET` | `/medications/{id}` | Bearer Token | Detalle completo de un medicamento. |
 | `PUT` | `/medications/{id}` | Bearer Token | Actualiza dosis, frecuencia o fechas. |
 | `DELETE` | `/medications/{id}` | Bearer Token | Eliminación suave (soft delete). |
-| `POST` | `/medications/{id}/tomas` | Bearer Token | Registra toma (`tomado`, `omitido`, `pendiente`). Resta 1 al stock si fue tomado. |
+| `POST` | `/medications/{id}/tomas` | Bearer Token | Registra toma (`tomado`, `omitido`, `pendiente`). Resta stock y audita acción. |
 | `GET` | `/medications/tomas/historial` | Bearer Token | **Para pantalla Historial:** Registro de cumplimiento. |
+| `GET` | `/medications/internal/prediccion-agotamiento` | No (Interno) | *Uso interno:* Cálculo proyectado de días restantes de tratamiento para el Cron. |
+
 
 #### Ejemplo crear medicamento con stock (`POST /medications`):
 ```json
@@ -207,6 +216,13 @@ Cuando una toma es marcada como `tomado` y el `stock_actual` disminuye hasta ser
 1. El **Paciente** recibe: *"Atención: Te quedan solo {X} dosis de {Medicamento}. Recuerda surtir tu receta."*
 2. El **Cuidador** recibe: *"Alerta de Stock: A tu familiar le quedan solo {X} dosis de {Medicamento}. Recuerda surtir el medicamento."*
 Ambos usuarios ven la alerta en su respectivo `GET /notifications/pendientes`.
+
+#### 🤖 Cron Predictivo Proactivo de Agotamiento de Stock:
+El sistema ejecuta automáticamente un análisis en segundo plano evaluando los días restantes de tratamiento:
+- Si a un medicamento le quedan **3 días o menos de pastillas**:
+  - Genera proactivamente una notificación preventiva: *"Aviso preventivo: Al ritmo actual, tus pastillas de [Medicamento] se agotarán en X días..."*
+  - Notifica tanto al paciente como a su cuidador para que soliciten la receta médica con anticipación.
+
 
 
 #### Cómo implementarlo en Flutter:
