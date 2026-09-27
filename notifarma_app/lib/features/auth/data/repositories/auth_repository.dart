@@ -50,4 +50,22 @@ class AuthRepository {
     final response = await _apiClient.post('/auth/vincular-cuidador?email_cuidador=$emailCuidador');
     return response as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> generarCodigoVinculacion() async {
+    final response = await _apiClient.post('/auth/generar-codigo');
+    return response as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> vincularPorCodigo(String codigo) async {
+    final response = await _apiClient.post(
+      '/auth/vincular-codigo',
+      body: {'codigo': codigo},
+    );
+    return response as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> cancelarCodigoVinculacion() async {
+    final response = await _apiClient.post('/auth/cancelar-codigo');
+    return response as Map<String, dynamic>;
+  }
 }

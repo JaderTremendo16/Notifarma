@@ -1,100 +1,106 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:notifarma_app/core/config/app_theme.dart';
+import 'package:notifarma_app/core/providers/theme_provider.dart';
 import 'package:notifarma_app/core/utils/date_formatter.dart';
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
+import 'package:notifarma_app/shared/widgets/theme_toggle_switch.dart';
 
-class SeniorHeader extends StatelessWidget {
+class SeniorHeader extends StatefulWidget {
   final String subtitle;
 
-  const SeniorHeader({
-    super.key,
-    required this.subtitle,
-  });
+  const SeniorHeader({super.key, required this.subtitle});
+
+  @override
+  State<SeniorHeader> createState() => _SeniorHeaderState();
+}
+
+class _SeniorHeaderState extends State<SeniorHeader> {
+  Timer? _timer;
+  late DateTime _currentTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentTime = DateTime.now();
+    // Live update every second
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _currentTime = DateTime.now();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
     final userName = authProvider.user?.nombres ?? 'Don Carlos';
     final initials = authProvider.userInitials;
-    final nowStr = DateFormatter.formatHeaderDateTime(DateTime.now());
+    final isDark = themeProvider.isDarkMode;
+    final nowStr = DateFormatter.formatHeaderDateTime(_currentTime);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOutCubic,
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 44, 20, 24),
-      decoration: const BoxDecoration(
-        color: AppColors.primaryBlue,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(28),
-          bottomRight: Radius.circular(28),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+              : [const Color(0xFF3B82F6), const Color(0xFF1D4ED8)], // Soft ocean gradient
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isDark ? Colors.black : const Color(0xFF1D4ED8)).withValues(alpha: isDark ? 0.35 : 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top line: Date/time, ODS 3 badge, Voice action
+          // Top line: Live Date/time and Smooth Theme Toggle Switch
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.access_time_rounded, color: Colors.white70, size: 18),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  nowStr,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+              Row(
+                children: [
+                  const Icon(
+                    Icons.access_time_rounded,
+                    color: Colors.white70,
+                    size: 18,
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  'ODS 3',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Asistente de voz activado 🔊'),
-                      duration: Duration(seconds: 2),
+                  const SizedBox(width: 6),
+                  Text(
+                    nowStr,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
                     ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.volume_up_rounded, color: Colors.white, size: 14),
-                      SizedBox(width: 4),
-                      Text(
-                        'Voz',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                ],
+              ),
+              ThemeToggleSwitch(
+                isDark: isDark,
+                onChanged: (val) => themeProvider.toggleTheme(val),
               ),
             ],
           ),
@@ -120,7 +126,7 @@ class SeniorHeader extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      subtitle,
+                      widget.subtitle,
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 16,
@@ -134,7 +140,7 @@ class SeniorHeader extends StatelessWidget {
                 width: 54,
                 height: 54,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.25),
+                  color: Colors.white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                   border: Border.all(color: Colors.white38, width: 2),
                 ),

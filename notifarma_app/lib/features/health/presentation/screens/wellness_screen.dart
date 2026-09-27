@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
+import 'package:notifarma_app/core/providers/theme_provider.dart';
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
 import 'package:notifarma_app/features/health/providers/health_provider.dart';
 import 'package:notifarma_app/shared/widgets/senior_header.dart';
@@ -22,23 +23,24 @@ class _WellnessScreenState extends State<WellnessScreen> {
     });
   }
 
-  void _callEmergencyContact(BuildContext context, String? name) async {
-    final contactName = name ?? 'María';
-    final Uri url = Uri.parse('tel:1234567890');
+  void _callEmergencyContact(BuildContext context, String? name, String? phone) async {
+    final contactName = name ?? 'Contacto de Emergencia';
+    final rawPhone = (phone != null && phone.trim().isNotEmpty) ? phone.trim() : '123';
+    final Uri url = Uri.parse('tel:$rawPhone');
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url);
       } else {
         if (!context.mounted) return;
-        _showSnackBar(context, 'Llamando a $contactName (Contacto de emergencia)...');
+        _showSnackBar(context, 'Marcando a $contactName ($rawPhone)...');
       }
     } catch (_) {
       if (!context.mounted) return;
-      _showSnackBar(context, 'Llamando a $contactName (Contacto de emergencia)...');
+      _showSnackBar(context, 'Marcando a $contactName ($rawPhone)...');
     }
   }
 
-  void _triggerSosAlert(BuildContext context) {
+  void _triggerSosAlert(BuildContext context, String? name, String? phone) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -50,15 +52,23 @@ class _WellnessScreenState extends State<WellnessScreen> {
             Text('¡ALERTA SOS!', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.sosRed)),
           ],
         ),
-        content: const Text(
-          'Se ha enviado una alerta de auxilio de emergencia a su cuidador y contactos registrados.',
-          style: TextStyle(fontSize: 18),
+        content: Text(
+          'Se ha activado la alerta de auxilio de emergencia para ${name ?? "su contacto principal"}. ¿Desea realizar la llamada de auxilio ahora mismo?',
+          style: const TextStyle(fontSize: 18),
         ),
         actions: [
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCELAR', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _callEmergencyContact(context, name, phone);
+            },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.sosRed),
-            child: const Text('ENTENDIDO'),
+            icon: const Icon(Icons.phone_in_talk_rounded, color: Colors.white),
+            label: const Text('LLAMAR AHORA', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -79,9 +89,12 @@ class _WellnessScreenState extends State<WellnessScreen> {
   Widget build(BuildContext context) {
     final healthProvider = Provider.of<HealthProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.isDarkMode;
     final recommendation = healthProvider.recomendacionHoy;
     final selectedMood = healthProvider.selectedMood;
     final contactName = authProvider.user?.contactoEmergenciaNombre ?? 'María (Hija)';
+    final contactPhone = authProvider.user?.contactoEmergenciaTelefono;
 
     return Column(
       children: [
@@ -103,50 +116,50 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.textSecondary,
+                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                             letterSpacing: 1.1,
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           '¿Cómo se siente en este momento?',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                           ),
                         ),
                         const SizedBox(height: 14),
 
-                        // Emojis Horizontal Selection Bar (Matching Image 3)
+                        // Emojis Horizontal Selection Bar
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              _buildEmojiOption(context, 'muy_bien', '😄', 'Muy bien', selectedMood, healthProvider),
+                              _buildEmojiOption(context, 'muy_bien', '🤩', 'Muy bien', selectedMood, healthProvider, isDark),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'bien', '🙂', 'Bien', selectedMood, healthProvider),
+                              _buildEmojiOption(context, 'bien', '😊', 'Bien', selectedMood, healthProvider, isDark),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'regular', '😐', 'Regular', selectedMood, healthProvider),
+                              _buildEmojiOption(context, 'regular', '😐', 'Regular', selectedMood, healthProvider, isDark),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'mal', '😣', 'Con dolor', selectedMood, healthProvider),
+                              _buildEmojiOption(context, 'mal', '😣', 'Con dolor', selectedMood, healthProvider, isDark),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'mal', '😵', 'Mareado', selectedMood, healthProvider),
+                              _buildEmojiOption(context, 'mal', '😵', 'Mareado', selectedMood, healthProvider, isDark),
                             ],
                           ),
                         ),
                         const SizedBox(height: 20),
 
-                        // VITAL / HEALTH CARD (Matching Image 3)
+                        // VITAL / HEALTH CARD
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: isDark ? AppColors.cardDark : Colors.white,
                             borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: AppColors.borderGrey),
+                            border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
+                                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -175,17 +188,17 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                           style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.bold,
-                                            color: AppColors.textSecondary,
+                                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                                             letterSpacing: 0.8,
                                           ),
                                         ),
                                         const SizedBox(height: 2),
-                                        const Text(
+                                        Text(
                                           '120 / 80 mmHg',
                                           style: TextStyle(
                                             fontSize: 24,
                                             fontWeight: FontWeight.w900,
-                                            color: AppColors.textPrimary,
+                                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                                           ),
                                         ),
                                         const SizedBox(height: 2),
@@ -202,7 +215,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                   ),
                                 ],
                               ),
-                              const Divider(height: 24, color: AppColors.borderGrey),
+                              Divider(height: 24, color: isDark ? AppColors.borderDark : AppColors.borderLight),
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -211,10 +224,10 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                   Expanded(
                                     child: Text(
                                       recommendation,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
+                                        color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                                         height: 1.35,
                                       ),
                                     ),
@@ -226,13 +239,13 @@ class _WellnessScreenState extends State<WellnessScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // QUICK CONTACTS (Matching Image 3)
+                        // QUICK CONTACTS
                         Text(
                           'CONTACTOS RÁPIDOS',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: AppColors.textSecondary,
+                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                             letterSpacing: 1.1,
                           ),
                         ),
@@ -240,12 +253,12 @@ class _WellnessScreenState extends State<WellnessScreen> {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: isDark ? AppColors.cardDark : Colors.white,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: AppColors.borderGrey),
+                            border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
                           ),
                           child: InkWell(
-                            onTap: () => _callEmergencyContact(context, contactName),
+                            onTap: () => _callEmergencyContact(context, contactName, contactPhone),
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                               decoration: BoxDecoration(
@@ -273,9 +286,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                         ),
                         const SizedBox(height: 24),
 
-                        // SOS EMERGENCY BUTTON (Matching Image 3)
+                        // SOS EMERGENCY BUTTON (Matching Image 2)
                         GestureDetector(
-                          onLongPress: () => _triggerSosAlert(context),
+                          onLongPress: () => _triggerSosAlert(context, contactName, contactPhone),
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
@@ -337,6 +350,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
     String label,
     String? currentSelected,
     HealthProvider provider,
+    bool isDark,
   ) {
     final isSelected = currentSelected == animoValue;
 
@@ -353,15 +367,19 @@ class _WellnessScreenState extends State<WellnessScreen> {
         width: 82,
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isDark ? AppColors.cardDark : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? AppColors.primaryBlue : AppColors.borderGrey,
-            width: isSelected ? 3.0 : 1.5,
+            color: isSelected
+                ? AppColors.primaryBlue
+                : (isDark ? AppColors.borderDark : AppColors.borderLight),
+            width: isSelected ? 2.5 : 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: isSelected ? AppColors.primaryBlue.withValues(alpha: 0.18) : Colors.black.withValues(alpha: 0.03),
+              color: isSelected
+                  ? AppColors.primaryBlue.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -377,7 +395,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                color: isSelected ? AppColors.primaryBlue : AppColors.textPrimary,
+                color: isSelected
+                    ? AppColors.primaryBlue
+                    : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight),
               ),
             ),
           ],

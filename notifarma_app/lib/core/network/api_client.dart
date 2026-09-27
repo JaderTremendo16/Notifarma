@@ -35,6 +35,22 @@ class ApiClient {
     }
   }
 
+  Future<List<int>> getBytes(String endpoint, {bool isPublic = false}) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
+    final headers = await _getHeaders(isPublic: isPublic);
+    headers['Accept'] = 'application/pdf';
+
+    try {
+      final response = await http.get(uri, headers: headers).timeout(ApiConfig.connectTimeout);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return response.bodyBytes;
+      }
+      throw _processResponse(response);
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   Future<dynamic> post(String endpoint, {dynamic body, bool isPublic = false}) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
     final headers = await _getHeaders(isPublic: isPublic);

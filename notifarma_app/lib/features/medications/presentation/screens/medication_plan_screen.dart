@@ -131,7 +131,9 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
   Widget build(BuildContext context) {
     final medProvider = Provider.of<MedicationProvider>(context);
     final proximo = medProvider.proximoMedicamento;
-    final meds = medProvider.medications;
+    final meds = medProvider.filteredMedications.isNotEmpty
+        ? medProvider.filteredMedications
+        : medProvider.medications;
 
     return Column(
       children: [
@@ -147,7 +149,7 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // MAIN HIGHLIGHT CARD: TOCA PARA TOMAR (Matching Image 2)
+                        // MAIN HIGHLIGHT CARD: TOCA PARA TOMAR (Matching Image 1)
                         _buildHighlightCard(proximo, medProvider),
                         const SizedBox(height: 20),
 
@@ -155,7 +157,7 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               'PRÓXIMAS TOMAS',
                               style: TextStyle(
                                 fontSize: 14,
@@ -172,7 +174,7 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                         ),
                         const SizedBox(height: 10),
 
-                        // Time filter pills
+                        // Time filter pills (Mañana / Tarde / Noche)
                         Row(
                           children: [
                             _buildFilterChip('Mañana', '🌅 Mañana', medProvider),
@@ -198,7 +200,7 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                                 Icon(Icons.medication_liquid_rounded, size: 48, color: AppColors.textSecondary),
                                 SizedBox(height: 8),
                                 Text(
-                                  'No hay medicamentos registrados todavía.',
+                                  'No hay medicamentos registrados en esta jornada.',
                                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                                 ),
                               ],
@@ -445,10 +447,14 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
           ),
           ElevatedButton(
             onPressed: () async {
-                if (!mounted) return;
- {
+              final ok = await provider.registrarToma(m.id.toString(), 'tomado');
+              if (!context.mounted) return;
+              if (ok) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Toma de ${m.nombre} registrada')),
+                  SnackBar(
+                    content: Text('Toma de ${m.nombre} registrada correctamente 🎉'),
+                    backgroundColor: AppColors.successGreen,
+                  ),
                 );
               }
             },

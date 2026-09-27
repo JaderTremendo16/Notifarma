@@ -30,10 +30,10 @@ class FloatingBottomNavBar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildNavItem(0, Icons.fingerprint_rounded, 'ACCESO'),
-          _buildNavItem(1, Icons.medication_rounded, 'BOTICA'),
-          _buildNavItem(2, Icons.auto_awesome_rounded, 'INICIO'),
-          _buildNavItem(3, Icons.favorite_rounded, 'SALUD'),
+          _buildNavItem(0, Icons.home_rounded, 'INICIO'),
+          _buildNavItem(1, Icons.favorite_rounded, 'SALUD'),
+          _buildNavItem(2, Icons.diversity_3_rounded, 'FAMILIA'),
+          _buildNavItem(3, Icons.person_rounded, 'PERFIL'),
         ],
       ),
     );

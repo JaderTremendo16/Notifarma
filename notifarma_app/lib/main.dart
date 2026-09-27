@@ -7,6 +7,7 @@ import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
 import 'package:notifarma_app/features/dashboard/presentation/screens/role_home_screen.dart';
 import 'package:notifarma_app/features/health/providers/health_provider.dart';
 import 'package:notifarma_app/features/medications/providers/medication_provider.dart';
+import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
 import 'package:notifarma_app/shared/widgets/uiverse_loader.dart';
 
 void main() {
@@ -34,6 +35,9 @@ class NotiFarmaApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
+            themeAnimationDuration: const Duration(milliseconds: 450),
+            themeAnimationCurve: Curves.easeInOutCubic,
+            builder: (context, child) => TopNotificationBannerOverlay(child: child ?? const SizedBox.shrink()),
             home: const RootNavigationRouter(),
           );
         },

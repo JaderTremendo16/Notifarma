@@ -6,12 +6,10 @@ load_dotenv()
 
 from fastapi import FastAPI
 from app.database import Base, engine
+from app.models.user_model import User, CodigoVinculacion  # Registra los modelos en Base.metadata
 from app.routers import auth_router
 
-
-
-
-#Crea las tablas en la base de datos si no existen
+# Crea las tablas en la base de datos si no existen
 Base.metadata.create_all(bind=engine)
 
 #Instancia principal de la aplicación FastAPI

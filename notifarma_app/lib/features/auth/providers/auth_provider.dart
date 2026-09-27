@@ -134,6 +134,43 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<String?> generarCodigoVinculacion() async {
+    try {
+      final res = await _repository.generarCodigoVinculacion();
+      return res['codigo'] as String?;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> vincularPorCodigo(String codigo) async {
+    try {
+      await _repository.vincularPorCodigo(codigo);
+      // Refresh user profile after linking
+      _user = await _repository.getProfile();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> cancelarCodigoVinculacion() async {
+    try {
+      await _repository.cancelarCodigoVinculacion();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> logout() async {
     await _storageService.clearAll();
     _user = null;

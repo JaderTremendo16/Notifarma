@@ -6,6 +6,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from app.database import Base, engine
+from app.models.medication_model import Medicamento, Toma, RegistroAuditoria  # Registra los modelos en Base.metadata
 from app.routers import medication_router
 
 # Crea las tablas en la base de datos si no existen

@@ -333,3 +333,27 @@ def vincular_por_codigo(
     }
 
 
+@router.post("/cancelar-codigo")
+def cancelar_codigo_vinculacion(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """
+    Inactiva / revoca cualquier código de vinculación activo generado por el usuario autenticado.
+    """
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    user_id = payload.get("sub")
+    usuario = db.query(User).filter(User.id == user_id).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    afectados = db.query(CodigoVinculacion).filter(
+        CodigoVinculacion.generador_id == usuario.id,
+        CodigoVinculacion.usado == 0,
+    ).update({"usado": 2})
+    db.commit()
+
+    return {"message": "Código cancelado correctamente", "codigos_cancelados": afectados}

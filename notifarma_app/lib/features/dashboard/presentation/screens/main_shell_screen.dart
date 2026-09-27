@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:notifarma_app/core/config/app_theme.dart';
+import 'package:notifarma_app/core/providers/theme_provider.dart';
 import 'package:notifarma_app/core/services/notification_service.dart';
-import 'package:notifarma_app/features/auth/presentation/screens/pin_access_screen.dart';
+import 'package:notifarma_app/features/auth/presentation/screens/family_link_screen.dart';
 import 'package:notifarma_app/features/dashboard/presentation/screens/home_dashboard_screen.dart';
+import 'package:notifarma_app/features/dashboard/presentation/screens/profile_screen.dart';
 import 'package:notifarma_app/features/health/presentation/screens/wellness_screen.dart';
-import 'package:notifarma_app/features/medications/presentation/screens/medication_plan_screen.dart';
 import 'package:notifarma_app/shared/widgets/floating_bottom_nav_bar.dart';
 
 class MainShellScreen extends StatefulWidget {
@@ -14,7 +17,7 @@ class MainShellScreen extends StatefulWidget {
 }
 
 class _MainShellScreenState extends State<MainShellScreen> {
-  int _currentIndex = 1; // Default to BOTICA / Medication plan
+  int _currentIndex = 0; // Default to INICIO (Unified Dashboard)
 
   @override
   void initState() {
@@ -39,14 +42,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
-      PinAccessScreen(onPinSuccess: () => _onTabTapped(1)),
-      const MedicationPlanScreen(),
-      HomeDashboardScreen(onNavigateTab: _onTabTapped),
-      const WellnessScreen(),
+      UnifiedHomeDashboardScreen(onNavigateTab: _onTabTapped), // Tab 0: INICIO & BOTICA
+      const WellnessScreen(),                                   // Tab 1: SALUD & BIENESTAR
+      const FamilyLinkScreen(),                                 // Tab 2: VINCULACIÓN FAMILIAR (Código NF-4829)
+      const ProfileScreen(),                                    // Tab 3: PERFIL, AUDITORÍA & REPORTES PDF
     ];
 
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.isDarkMode;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
+      backgroundColor: isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
       body: Stack(
         children: [
           // Active Tab Body Screen
@@ -57,7 +63,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
           ),
 
-          // iOS Style Floating Dock Bottom Navigation Bar (Image 4)
+          // Floating Dock Bottom Navigation Bar
           Positioned(
             left: 0,
             right: 0,

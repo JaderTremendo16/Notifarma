@@ -2,28 +2,37 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  // Brand Colors
-  static const Color primaryBlue = Color(0xFF1662F3);
-  static const Color darkHeaderBlue = Color(0xFF0D47A1);
-  static const Color accentOrange = Color(0xFFFF6B00);
-  static const Color lightOrange = Color(0xFFFFF2E8);
-  static const Color sosRed = Color(0xFFE53935);
-  static const Color successGreen = Color(0xFF2E7D32);
-  static const Color lightGreen = Color(0xFFE8F5E9);
+  // Brand Colors - Soft, calm and senior-friendly
+  static const Color primaryBlue = Color(0xFF2563EB); // Soft Royal Blue
+  static const Color primaryBlueLight = Color(0xFF3B82F6);
+  static const Color darkHeaderBlue = Color(0xFF1E3A8A); // Deep serene navy
+  
+  static const Color accentOrange = Color(0xFFEA580C); // Warm Apricot / Peach orange (soft)
+  static const Color lightOrange = Color(0xFFFFF7ED); // Soft peach background
+  static const Color morningBlue = Color(0xFF0284C7); // Fresh morning sky
+  static const Color afternoonOrange = Color(0xFFF97316); // Warm afternoon amber
+  static const Color nightIndigo = Color(0xFF6366F1); // Calm night indigo
+
+  static const Color sosRed = Color(0xFFDC2626); // Soft Coral Red
+  static const Color lightRed = Color(0xFFFEF2F2);
+  static const Color successGreen = Color(0xFF059669); // Soft Emerald / Mint
+  static const Color lightGreen = Color(0xFFECFDF5);
 
   // Light Mode Colors
-  static const Color backgroundLight = Color(0xFFF4F6F9);
+  static const Color backgroundLight = Color(0xFFF8FAFC); // Clean slate soft background
   static const Color cardLight = Colors.white;
-  static const Color textPrimaryLight = Color(0xFF0F172A);
+  static const Color cardGlassLight = Color(0xEBFFFFFF); // 92% White Glass
+  static const Color textPrimaryLight = Color(0xFF1E293B);
   static const Color textSecondaryLight = Color(0xFF64748B);
   static const Color borderLight = Color(0xFFE2E8F0);
 
   // Dark Mode Colors
-  static const Color backgroundDark = Color(0xFF111827); // Deep slate midnight
-  static const Color cardDark = Color(0xFF1F2937); // Dark elevated surface
-  static const Color textPrimaryDark = Color(0xFFF9FAFB); // High contrast light text
-  static const Color textSecondaryDark = Color(0xFF9CA3AF); // Muted secondary text
-  static const Color borderDark = Color(0xFF374151); // Dark stroke
+  static const Color backgroundDark = Color(0xFF0F172A); // Midnight Slate
+  static const Color cardDark = Color(0xFF1E293B); // Elevated dark surface
+  static const Color cardGlassDark = Color(0xEB1E293B); // Translucent dark glass
+  static const Color textPrimaryDark = Color(0xFFF8FAFC); // High contrast soft white
+  static const Color textSecondaryDark = Color(0xFF94A3B8); // Muted secondary text
+  static const Color borderDark = Color(0xFF334155); // Dark stroke
 
   // Legacy/Default references
   static const Color background = backgroundLight;
@@ -53,11 +62,11 @@ class AppTheme {
         error: AppColors.sosRed,
       ),
       textTheme: _buildTextTheme(baseTextTheme, AppColors.textPrimaryLight, AppColors.textSecondaryLight),
-      elevatedButtonTheme: _buildElevatedButtonTheme(),
+      elevatedButtonTheme: _buildElevatedButtonTheme(AppColors.accentOrange),
       cardTheme: CardThemeData(
         color: AppColors.cardLight,
-        elevation: 2,
-        shadowColor: Colors.black.withValues(alpha: 0.06),
+        elevation: 1,
+        shadowColor: Colors.black.withValues(alpha: 0.04),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.borderLight, width: 1),
@@ -88,22 +97,22 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      primaryColor: AppColors.primaryBlue,
+      primaryColor: AppColors.primaryBlueLight,
       scaffoldBackgroundColor: AppColors.backgroundDark,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primaryBlue,
         brightness: Brightness.dark,
-        primary: AppColors.primaryBlue,
+        primary: AppColors.primaryBlueLight,
         secondary: AppColors.accentOrange,
         surface: AppColors.cardDark,
         error: AppColors.sosRed,
       ),
       textTheme: _buildTextTheme(baseTextTheme, AppColors.textPrimaryDark, AppColors.textSecondaryDark),
-      elevatedButtonTheme: _buildElevatedButtonTheme(),
+      elevatedButtonTheme: _buildElevatedButtonTheme(AppColors.accentOrange),
       cardTheme: CardThemeData(
         color: AppColors.cardDark,
-        elevation: 3,
-        shadowColor: Colors.black.withValues(alpha: 0.3),
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: 0.25),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
           side: const BorderSide(color: AppColors.borderDark, width: 1),
@@ -122,7 +131,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primaryBlue, width: 2),
+          borderSide: const BorderSide(color: AppColors.primaryBlueLight, width: 2),
         ),
       ),
     );
@@ -176,19 +185,20 @@ class AppTheme {
     );
   }
 
-  static ElevatedButtonThemeData _buildElevatedButtonTheme() {
+  static ElevatedButtonThemeData _buildElevatedButtonTheme(Color bgColor) {
     return ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.accentOrange,
+        backgroundColor: bgColor,
         foregroundColor: Colors.white,
         minimumSize: const Size(double.infinity, 56),
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
         ),
         textStyle: GoogleFonts.outfit(
-          fontSize: 20,
+          fontSize: 19,
           fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
         ),
         elevation: 2,
       ),
