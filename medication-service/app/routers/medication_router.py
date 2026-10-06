@@ -26,6 +26,7 @@ from app.services.medication_service import calcular_proxima_toma
 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8004")
+HEALTH_SERVICE_URL = os.getenv("HEALTH_SERVICE_URL", "http://health-service:8003")
 
 router = APIRouter(prefix="/medications", tags=["medications"])
 
@@ -344,6 +345,22 @@ def descargar_reporte_adherencia_pdf(
     )
     med_map = {str(m.id): m.nombre for m in medicamentos}
 
+    # Consultar síntomas y bienestar desde health-service
+    sintomas_reportados = []
+    animos_reportados = []
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res_health = client.get(
+                f"{HEALTH_SERVICE_URL}/health/historial?dias={dias}",
+                headers={"X-User-Id": str(paciente_id)},
+            )
+            if res_health.status_code == 200:
+                h_data = res_health.json()
+                sintomas_reportados = h_data.get("sintomas", [])
+                animos_reportados = h_data.get("animos", [])
+    except Exception:
+        pass
+
     total_tomas = len(tomas)
     total_tomadas = sum(1 for t in tomas if t.estado == EstadoToma.tomado)
     total_omitidas = sum(1 for t in tomas if t.estado == EstadoToma.omitido)
@@ -486,6 +503,33 @@ def descargar_reporte_adherencia_pdf(
         ('TOPPADDING', (0, 0), (-1, -1), 4),
     ]))
     story.append(t_tomas)
+    story.append(Spacer(1, 15))
+
+    # Sección de Síntomas Reportados y Bienestar (Health Service)
+    story.append(Paragraph("🩺 Registro de Síntomas y Bienestar del Paciente", seccion_style))
+    if sintomas_reportados:
+        sintomas_table_data = [["Fecha y Hora", "Síntoma Reportado", "Intensidad", "Observaciones / Dictado"]]
+        for s in sintomas_reportados[:15]:
+            nombre_sintoma = s.get("sintoma_otro") or "Síntoma general"
+            fecha_str = s.get("fecha_hora", "")[:16].replace("T", " ")
+            intensidad = (s.get("intensidad") or "-").capitalize()
+            observacion = s.get("observacion") or "-"
+            sintomas_table_data.append([fecha_str, nombre_sintoma, intensidad, observacion])
+        
+        t_sintomas = Table(sintomas_table_data, colWidths=[110, 130, 80, 180])
+        t_sintomas.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#00695C")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CFD8DC")),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_sintomas)
+    else:
+        story.append(Paragraph("No se registraron síntomas adversos o malestar durante este período evaluado. El paciente ha reportado bienestar general.", subtitulo_style))
 
     # Construir PDF
     doc.build(story)

@@ -60,6 +60,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/medication_db
       AUTH_SERVICE_URL: http://auth-service:8000
       NOTIFICATION_SERVICE_URL: http://notification-service:8004
+      HEALTH_SERVICE_URL: http://health-service:8003
     ports:
       - "8002:8002"
     depends_on:

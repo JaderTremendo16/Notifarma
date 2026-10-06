@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
@@ -7,7 +8,8 @@ class ApiConfig {
     if (kIsWeb) {
       return 'http://localhost:8001';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8001';
+      // Usamos localhost gracias al adb forward por USB
+      return 'http://localhost:8001';
     } else {
       return 'http://localhost:8001';
     }

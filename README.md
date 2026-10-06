@@ -126,7 +126,7 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 
 | Método | Ruta | Header Auth | Descripción |
 |---|---|---|---|
-| `POST` | `/auth/register` | No | Registro de paciente o cuidador (soporta `zona_horaria`, ej: `"America/Bogota"`). |
+| `POST` | `/auth/register` | No | Registro de paciente o cuidador (valida formato numérico de teléfono de 7 a 15 dígitos y zona horaria). |
 | `POST` | `/auth/login` | No | Inicia sesión y devuelve el JWT token. |
 | `GET` | `/auth/me` | Bearer Token | Obtiene los datos del usuario logueado. |
 | `POST` | `/auth/generar-codigo` | Bearer Token | **Accesibilidad:** Genera un código corto de 6 caracteres (ej: `NF-4829`) para emparejar. |
@@ -153,7 +153,7 @@ El frontend **SOLO debe comunicarse con el API Gateway**:
 | `PATCH` | `/medications/{id}/stock` | Bearer Token | **Pastillero:** Recarga o ajusta el stock actual y mínimo. Registra auditoría. |
 | `GET` | `/medications/auditoria` | Bearer Token | **Trazabilidad Médica:** Historial de quién tomó o recargó medicamentos con fecha y hora. |
 | `GET` | `/medications/cuidador/resumen-paciente` | Bearer Token (Cuidador) | **Dashboard Cuidador:** Resumen completo del paciente (meds, stock, tomas de hoy). |
-| `GET` | `/medications/reporte-adherencia/pdf?dias=30` | Bearer Token | **Reporte Clínico:** Descarga PDF formal de cumplimiento para consulta médica. |
+| `GET` | `/medications/reporte-adherencia/pdf?dias=30` | Bearer Token | **Reporte Clínico Integral:** Genera documento PDF formal que consolida porcentaje de adherencia, trazabilidad de tomas y el registro clínico de síntomas/bienestar reportados en `health-service`. |
 | `GET` | `/medications/{id}` | Bearer Token | Detalle completo de un medicamento. |
 | `PUT` | `/medications/{id}` | Bearer Token | Actualiza dosis, frecuencia o fechas. |
 | `DELETE` | `/medications/{id}` | Bearer Token | Eliminación suave (soft delete). |

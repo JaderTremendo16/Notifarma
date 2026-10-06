@@ -1,6 +1,6 @@
 # app/schemas/user_schema.py
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from uuid import UUID
 from datetime import datetime
@@ -18,6 +18,18 @@ class UserCreate(BaseModel):
     contacto_emergencia_nombre: Optional[str] = None
     contacto_emergencia_telefono: Optional[str] = None
     zona_horaria: Optional[str] = "America/Bogota"
+
+    @field_validator("contacto_emergencia_telefono")
+    @classmethod
+    def validar_telefono(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            clean = v.strip().replace(" ", "").replace("-", "").replace("+", "")
+            if clean:
+                if not clean.isdigit():
+                    raise ValueError("El teléfono de emergencia solo debe contener números")
+                if len(clean) < 7 or len(clean) > 15:
+                    raise ValueError("El número telefónico debe tener entre 7 y 15 dígitos")
+        return v
 
 
 # 2. Login (Lo que entra al iniciar sesión)
