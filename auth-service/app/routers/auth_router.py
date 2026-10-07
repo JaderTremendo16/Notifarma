@@ -99,8 +99,14 @@ def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    return user
-    pass 
+    resp_data = UserResponse.model_validate(user)
+    if user.cuidador_id:
+        cuidador = db.query(User).filter(User.id == user.cuidador_id).first()
+        if cuidador:
+            resp_data.cuidador_nombre = cuidador.nombres
+            resp_data.cuidador_email = cuidador.email
+
+    return resp_data
 
 @router.post("/vincular-cuidador")
 def vincular_cuidador(
@@ -176,7 +182,11 @@ def obtener_paciente_de_cuidador(cuidador_id: str, db: Session = Depends(get_db)
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado para este cuidador")
 
-    return {"paciente_id": str(paciente.id)}
+    return {
+        "paciente_id": str(paciente.id),
+        "paciente_nombre": paciente.nombres,
+        "paciente_email": paciente.email,
+    }
 
 
 @router.get("/internal/zona-horaria/{user_id}")

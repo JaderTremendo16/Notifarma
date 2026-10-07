@@ -79,6 +79,8 @@ class TomaResponse(BaseModel):
 
 class ResumenCuidadorResponse(BaseModel):
     paciente_id:              UUID
+    paciente_nombre:          Optional[str] = None
+    paciente_email:           Optional[str] = None
     total_medicamentos_activos: int
     medicamentos:             List[MedicamentoResponse]
     alertas_stock:            List[MedicamentoResponse]
@@ -95,6 +97,7 @@ class ProximoMedicamentoResponse(BaseModel):
     nombre:         str
     dosis:          Optional[str]
     proxima_toma:   datetime
+    hora_formateada: Optional[str] = None
 
 
 class HorarioActivoItem(BaseModel):

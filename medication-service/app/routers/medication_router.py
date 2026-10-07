@@ -78,11 +78,14 @@ def proximo_medicamento(request: Request, db: Session = Depends(get_db)):
             mejor_tiempo = proxima
             mejor        = med
 
+    hora_str = mejor_tiempo.strftime("%I:%M %p")
+
     return ProximoMedicamentoResponse(
         medicamento_id=mejor.id,
         nombre=mejor.nombre,
         dosis=mejor.dosis,
         proxima_toma=mejor_tiempo,
+        hora_formateada=hora_str,
     )
 
 
@@ -206,13 +209,18 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
     """
     cuidador_id = request.headers.get("X-User-Id") or "d2802caa-7b8c-4145-9920-6893f8adecd0"
 
+    paciente_nombre = None
+    paciente_email = None
     # 1. Consultar a Auth Service cuál es el paciente vinculado a este cuidador
     try:
         with httpx.Client(timeout=5.0) as client:
             res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/paciente-de/{cuidador_id}")
             if res_auth.status_code != 200:
                 raise HTTPException(status_code=404, detail="No tienes ningún paciente vinculado")
-            paciente_id = res_auth.json().get("paciente_id")
+            auth_json = res_auth.json()
+            paciente_id = auth_json.get("paciente_id")
+            paciente_nombre = auth_json.get("paciente_nombre")
+            paciente_email = auth_json.get("paciente_email")
     except HTTPException:
         raise
     except Exception as e:
@@ -256,10 +264,13 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
             "nombre": mejor.nombre,
             "dosis": mejor.dosis,
             "proxima_toma": mejor_tiempo.isoformat(),
+            "hora_formateada": mejor_tiempo.strftime("%I:%M %p"),
         }
 
     return ResumenCuidadorResponse(
         paciente_id=UUID(paciente_id),
+        paciente_nombre=paciente_nombre,
+        paciente_email=paciente_email,
         total_medicamentos_activos=len(medicamentos),
         medicamentos=medicamentos,
         alertas_stock=alertas,

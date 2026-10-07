@@ -45,6 +45,8 @@ class UserResponse(BaseModel):
     email: EmailStr
     rol: RolUsuario
     cuidador_id: Optional[UUID] = None
+    cuidador_nombre: Optional[str] = None
+    cuidador_email: Optional[str] = None
     zona_horaria: str = "America/Bogota"
     #opcionales
     edad: Optional[int] = None
