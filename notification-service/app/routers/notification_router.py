@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
+import uuid
 from datetime import datetime
 
 from app.database import get_db
@@ -159,4 +160,32 @@ def crear_alerta_stock(datos: AlertaStockRequest, db: Session = Depends(get_db))
 
     db.commit()
     return {"message": "Alertas de stock procesadas", "destinatarios_notificados": creadas}
+
+
+@router.post("/internal/alerta-personalizada")
+def alerta_personalizada(datos: dict, db: Session = Depends(get_db)):
+    """
+    Permite a otros microservicios (como health-service al agendar una cita)
+    enviar una notificación directa y personalizada a un usuario.
+    """
+    destinatario_id = datos.get("destinatario_id")
+    if not destinatario_id:
+        raise HTTPException(status_code=400, detail="destinatario_id es requerido")
+
+    ahora = datetime.utcnow()
+    nueva = Notificacion(
+        paciente_id=UUID(destinatario_id),
+        destinatario_id=UUID(destinatario_id),
+        es_alerta_cuidador=False,
+        tipo=TipoNotificacion.cita,
+        referencia_id=uuid.uuid4(),
+        mensaje=datos.get("mensaje", "Tienes una nueva notificación de NotiFarma"),
+        fecha_hora_programada=ahora,
+        estado=EstadoNotificacion.pendiente,
+        intentos=1,
+        fecha_hora_ultimo_intento=ahora,
+    )
+    db.add(nueva)
+    db.commit()
+    return {"message": "Notificación personalizada creada"}
 

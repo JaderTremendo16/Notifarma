@@ -33,11 +33,31 @@ router = APIRouter(prefix="/medications", tags=["medications"])
 
 DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
 
+def _resolver_paciente_y_rol(request: Request) -> tuple[str, bool, str]:
+    """
+    Retorna (paciente_id, es_cuidador, user_id).
+    Si quien llama es un cuidador vinculado, paciente_id será el del paciente a cargo.
+    """
+    user_id = request.headers.get("X-User-Id") or DEFAULT_TEST_PACIENTE_ID
+    paciente_id = user_id
+    es_cuidador = False
+
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/paciente-de/{user_id}")
+            if res_auth.status_code == 200:
+                p_id = res_auth.json().get("paciente_id")
+                if p_id:
+                    paciente_id = p_id
+                    es_cuidador = True
+    except Exception:
+        pass
+
+    return paciente_id, es_cuidador, user_id
+
 def _get_paciente_id(request: Request) -> str:
-    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway) o usa el paciente de prueba."""
-    paciente_id = request.headers.get("X-User-Id")
-    if not paciente_id:
-        return DEFAULT_TEST_PACIENTE_ID
+    """Extrae el paciente autenticado o el paciente vinculado si quien consulta es cuidador."""
+    paciente_id, _, _ = _resolver_paciente_y_rol(request)
     return paciente_id
 
 
@@ -562,7 +582,7 @@ def crear_medicamento(
     db: Session = Depends(get_db),
 ):
     """Crea un medicamento para el paciente autenticado vía X-User-Id."""
-    paciente_id = _get_paciente_id(request)
+    paciente_id, es_cuidador, user_id = _resolver_paciente_y_rol(request)
     nuevo = Medicamento(
         paciente_id=paciente_id,
         nombre=datos.nombre,
@@ -575,6 +595,16 @@ def crear_medicamento(
         stock_minimo_alerta=datos.stock_minimo_alerta if datos.stock_minimo_alerta is not None else 5,
     )
     db.add(nuevo)
+
+    autor = "Cuidador" if es_cuidador else "Paciente"
+    db.add(RegistroAuditoria(
+        paciente_id=UUID(paciente_id),
+        usuario_id=UUID(user_id),
+        accion="CREAR_MEDICAMENTO",
+        detalle=f"Medicamento '{nuevo.nombre}' ({nuevo.dosis or 'sin dosis'}) registrado por {autor}. Frecuencia: c/{nuevo.frecuencia_horas}h.",
+        fecha_hora=datetime.utcnow()
+    ))
+
     db.commit()
     db.refresh(nuevo)
     return nuevo
@@ -612,7 +642,7 @@ def editar_medicamento(
     db: Session = Depends(get_db),
 ):
     """Edita campos de un medicamento existente. Solo modifica los campos enviados."""
-    paciente_id = _get_paciente_id(request)
+    paciente_id, es_cuidador, user_id = _resolver_paciente_y_rol(request)
     med = db.query(Medicamento).filter(
         Medicamento.id == med_id,
         Medicamento.paciente_id == paciente_id,
@@ -620,10 +650,22 @@ def editar_medicamento(
     if not med:
         raise HTTPException(status_code=404, detail="Medicamento no encontrado")
 
+    cambios = []
     for campo, valor in datos.model_dump(exclude_unset=True).items():
         setattr(med, campo, valor)
+        cambios.append(f"{campo}={valor}")
 
     med.updated_at = datetime.utcnow()
+
+    autor = "Cuidador" if es_cuidador else "Paciente"
+    db.add(RegistroAuditoria(
+        paciente_id=UUID(paciente_id),
+        usuario_id=UUID(user_id),
+        accion="EDITAR_MEDICAMENTO",
+        detalle=f"Medicamento '{med.nombre}' modificado por {autor}. Cambios: {', '.join(cambios)}.",
+        fecha_hora=datetime.utcnow()
+    ))
+
     db.commit()
     db.refresh(med)
     return med
@@ -632,7 +674,7 @@ def editar_medicamento(
 @router.delete("/{med_id}")
 def eliminar_medicamento(med_id: UUID, request: Request, db: Session = Depends(get_db)):
     """Marca el medicamento como inactivo (soft delete — conserva el historial)."""
-    paciente_id = _get_paciente_id(request)
+    paciente_id, es_cuidador, user_id = _resolver_paciente_y_rol(request)
     med = db.query(Medicamento).filter(
         Medicamento.id == med_id,
         Medicamento.paciente_id == paciente_id,
@@ -641,6 +683,16 @@ def eliminar_medicamento(med_id: UUID, request: Request, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Medicamento no encontrado")
     med.activo     = False
     med.updated_at = datetime.utcnow()
+
+    autor = "Cuidador" if es_cuidador else "Paciente"
+    db.add(RegistroAuditoria(
+        paciente_id=UUID(paciente_id),
+        usuario_id=UUID(user_id),
+        accion="ELIMINAR_MEDICAMENTO",
+        detalle=f"Medicamento '{med.nombre}' desactivado por {autor}.",
+        fecha_hora=datetime.utcnow()
+    ))
+
     db.commit()
     return {"message": f"Medicamento '{med.nombre}' marcado como inactivo"}
 
@@ -729,17 +781,7 @@ def actualizar_stock(
     Permite al paciente o al cuidador recargar o actualizar el inventario (stock)
     de un medicamento en el pastillero.
     """
-    user_id = _get_paciente_id(request)
-    paciente_id = user_id
-
-    # Si quien consulta es un cuidador, buscar el paciente a cargo
-    try:
-        with httpx.Client(timeout=3.0) as client:
-            res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/paciente-de/{user_id}")
-            if res_auth.status_code == 200:
-                paciente_id = res_auth.json().get("paciente_id")
-    except Exception:
-        pass
+    paciente_id, es_cuidador, user_id = _resolver_paciente_y_rol(request)
 
     med = db.query(Medicamento).filter(
         Medicamento.id == med_id,
@@ -755,12 +797,16 @@ def actualizar_stock(
 
     med.updated_at = datetime.utcnow()
 
+    autor = "Cuidador" if es_cuidador else "Paciente"
+    diferencia = med.stock_actual - stock_anterior
+    cambio_str = f"+{diferencia}" if diferencia >= 0 else f"{diferencia}"
+
     # Registrar evento en auditoría médica
     db.add(RegistroAuditoria(
         paciente_id=med.paciente_id,
         usuario_id=UUID(user_id),
         accion="RECARGA_STOCK",
-        detalle=f"Stock de '{med.nombre}' actualizado de {stock_anterior} a {med.stock_actual} unidades.",
+        detalle=f"Stock de '{med.nombre}' actualizado por {autor} de {stock_anterior} a {med.stock_actual} unidades ({cambio_str}).",
         fecha_hora=datetime.utcnow()
     ))
 

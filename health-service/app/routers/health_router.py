@@ -1,8 +1,8 @@
-# app/routers/health_router.py
-
+import os
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Tuple
 from uuid import UUID
 from datetime import datetime, date, timedelta
 
@@ -23,14 +23,35 @@ from app.services.wellness_rules import evaluar_bienestar
 
 router = APIRouter(prefix="/health", tags=["health"])
 
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8004")
 
 DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
 
+def _resolver_paciente_y_rol(request: Request) -> Tuple[str, bool, str]:
+    """
+    Retorna (paciente_id, es_cuidador, user_id).
+    Si quien llama es un cuidador vinculado, paciente_id será el de su paciente a cargo.
+    """
+    user_id = request.headers.get("X-User-Id") or DEFAULT_TEST_PACIENTE_ID
+    paciente_id = user_id
+    es_cuidador = False
+
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/paciente-de/{user_id}")
+            if res_auth.status_code == 200:
+                p_id = res_auth.json().get("paciente_id")
+                if p_id:
+                    paciente_id = p_id
+                    es_cuidador = True
+    except Exception:
+        pass
+
+    return paciente_id, es_cuidador, user_id
+
 def _get_paciente_id(request: Request) -> str:
-    """Extrae el paciente autenticado desde el header X-User-Id (inyectado por el API Gateway) o usa el paciente de prueba."""
-    paciente_id = request.headers.get("X-User-Id")
-    if not paciente_id:
-        return DEFAULT_TEST_PACIENTE_ID
+    paciente_id, _, _ = _resolver_paciente_y_rol(request)
     return paciente_id
 
 
@@ -238,8 +259,11 @@ def crear_cita(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """Crea una cita médica para el paciente autenticado."""
-    paciente_id = _get_paciente_id(request)
+    """
+    Crea una cita médica para el paciente autenticado o para el paciente a cargo del cuidador.
+    Si la cita es creada por un cuidador, se genera una notificación para el paciente.
+    """
+    paciente_id, es_cuidador, user_id = _resolver_paciente_y_rol(request)
     nueva = CitaMedica(
         paciente_id=paciente_id,
         especialidad=datos.especialidad,
@@ -251,6 +275,23 @@ def crear_cita(
     db.add(nueva)
     db.commit()
     db.refresh(nueva)
+
+    # Si fue creada por un cuidador, enviar notificación al paciente
+    if es_cuidador:
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/notifications/internal/alerta-personalizada",
+                    json={
+                        "destinatario_id": str(paciente_id),
+                        "tipo": "CITA_MEDICA",
+                        "titulo": "📅 Nueva Cita Médica Programada",
+                        "mensaje": f"Tu cuidador te ha agendado una cita de {datos.especialidad} para el {datos.fecha_hora.strftime('%Y-%m-%d %I:%M %p')}.",
+                    }
+                )
+        except Exception:
+            pass
+
     return nueva
 
 

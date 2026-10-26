@@ -22,6 +22,17 @@ Este documento contiene los cambios técnicos aplicados en el **Backend** y la l
 5. **Nota sobre Síntomas**:
    - Se descartó la pantalla compleja de síntomas y STT por decisión de alcance. El registro de bienestar en `health-service` permanece disponible de forma ligera para el estado de ánimo diario.
 
+6. **Inscripción y Gestión de Medicamentos por el Cuidador (`medication-service`)**:
+   - `POST /medications`, `PUT /medications/{id}` y `DELETE /medications/{id}` ahora detectan automáticamente si quien realiza la acción es el cuidador. El medicamento se asocia directamente a su paciente vinculado.
+   - Cada creación, edición o eliminación genera un registro en la tabla de **Auditoría Clínica** (`registros_auditoria`) indicando expresamente si fue el paciente o el cuidador quien lo realizó.
+
+7. **Recarga de Stock con Trazabilidad (`medication-service`)**:
+   - `PATCH /medications/{id}/stock` registra en auditoría: *"Stock actualizado por Cuidador de X a Y (+Z unidades)"*.
+
+8. **Agendamiento de Citas Médicas por el Cuidador con Notificación (`health-service` y `notification-service`)**:
+   - `POST /health/citas` permite al cuidador agendar citas para su paciente.
+   - Al crearse la cita por el cuidador, se dispara una notificación directa al paciente: *"📅 Nueva Cita Médica Programada: Tu cuidador te ha agendado una cita de [Especialidad]..."*.
+
 ---
 
 ## 📱 PARTE 2: Tareas para tu Compañero de Frontend (Flutter)
