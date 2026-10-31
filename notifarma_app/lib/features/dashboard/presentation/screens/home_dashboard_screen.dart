@@ -316,9 +316,7 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
     final proximo = medProvider.proximoMedicamento;
-    final meds = medProvider.filteredMedications.isNotEmpty
-        ? medProvider.filteredMedications
-        : medProvider.medications;
+    final meds = medProvider.filteredMedications;
 
     return Column(
       children: [
@@ -364,15 +362,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                         ),
                         const SizedBox(height: 8),
 
-                        // Filter Chips: Mañana / Tarde / Noche
-                        Row(
-                          children: [
-                            _buildFilterChip('Mañana', '🌅 Mañana', medProvider, isDark),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Tarde', '☀️ Tarde', medProvider, isDark),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Noche', '🌙 Noche', medProvider, isDark),
-                          ],
+                        // Filter Chips: Todos / Mañana / Tarde / Noche
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _buildFilterChip('Todos', '📋 Todos', medProvider, isDark),
+                              const SizedBox(width: 8),
+                              _buildFilterChip('Mañana', '🌅 Mañana', medProvider, isDark),
+                              const SizedBox(width: 8),
+                              _buildFilterChip('Tarde', '☀️ Tarde', medProvider, isDark),
+                              const SizedBox(width: 8),
+                              _buildFilterChip('Noche', '🌙 Noche', medProvider, isDark),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
 
@@ -429,7 +432,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
 
   Widget _buildHeroCard(Map<String, dynamic>? proximo, MedicationProvider provider, bool isDark) {
     final title = proximo != null ? proximo['nombre'] : (provider.medications.isNotEmpty ? provider.medications.first.nombre : 'Sin medicamentos pendientes');
-    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta') : '08:00 AM • 1 tableta';
+    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta') : '1 tableta';
+    final horaFormateada = proximo != null ? (proximo['hora_formateada'] as String?) : null;
+    final infoHorario = horaFormateada != null ? '$horaFormateada • $dosis' : dosis;
     final medId = proximo != null ? proximo['medicamento_id'] : (provider.medications.isNotEmpty ? provider.medications.first.id : null);
 
     final isAlreadyTaken = medId != null && provider.isDoseTakenRecently(medId.toString());
@@ -594,7 +599,7 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
           const SizedBox(height: 4),
 
           Text(
-            dosis,
+            infoHorario,
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
@@ -678,31 +683,29 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
 
   Widget _buildFilterChip(String key, String label, MedicationProvider provider, bool isDark) {
     final isSelected = provider.selectedFilter == key;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => provider.setFilter(key),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.primaryBlue : (isDark ? AppColors.cardDark : Colors.white),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected
-                  ? AppColors.primaryBlue
-                  : (isDark ? AppColors.borderDark : AppColors.borderLight),
-              width: 1.5,
-            ),
+    return GestureDetector(
+      onTap: () => provider.setFilter(key),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryBlue : (isDark ? AppColors.cardDark : Colors.white),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primaryBlue
+                : (isDark ? AppColors.borderDark : AppColors.borderLight),
+            width: 1.5,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight),
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? Colors.white
+                  : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight),
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),

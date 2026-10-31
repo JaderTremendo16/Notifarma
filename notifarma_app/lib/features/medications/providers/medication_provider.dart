@@ -11,7 +11,7 @@ class MedicationProvider extends ChangeNotifier {
   List<TomaModel> _tomasHistorial = [];
   bool _isLoading = false;
   String? _errorMessage;
-  String _selectedFilter = 'Mañana'; // 'Mañana', 'Tarde', 'Noche'
+  String _selectedFilter = 'Todos'; // 'Todos', 'Mañana', 'Tarde', 'Noche'
 
   List<MedicationModel> get medications => _medications;
   Map<String, dynamic>? get proximoMedicamento => _proximoMedicamento;
@@ -53,6 +53,7 @@ class MedicationProvider extends ChangeNotifier {
 
   List<MedicationModel> get filteredMedications {
     if (_medications.isEmpty) return [];
+    if (_selectedFilter == 'Todos') return _medications;
     return _medications.where((m) {
       try {
         final hour = int.tryParse(m.horaInicio.split(':')[0]) ?? 8;

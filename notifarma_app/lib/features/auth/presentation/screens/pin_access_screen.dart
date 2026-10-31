@@ -10,28 +10,31 @@ class PinAccessScreen extends StatelessWidget {
 
   const PinAccessScreen({super.key, required this.onPinSuccess});
 
-  void _callEmergencyContact(BuildContext context, String? name) async {
-    final contactName = name ?? 'María';
-    final Uri url = Uri.parse('tel:1234567890');
+  void _callEmergencyContact(BuildContext context, String? name, String? phone) async {
+    final contactName = (name != null && name.trim().isNotEmpty) ? name.trim() : 'Contacto de Emergencia';
+    final targetPhone = (phone != null && phone.trim().isNotEmpty) ? phone.trim() : '123';
+    final cleanNumber = targetPhone.replaceAll(RegExp(r'\s+|-'), '').trim();
+
+    final Uri url = Uri(scheme: 'tel', path: cleanNumber);
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url);
       } else {
         if (!context.mounted) return;
-        _showSnackBar(context, 'Llamando a $contactName (Contacto de emergencia)...');
+        _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $contactName ($cleanNumber).', isError: true);
       }
     } catch (_) {
       if (!context.mounted) return;
-      _showSnackBar(context, 'Llamando a $contactName (Contacto de emergencia)...');
+      _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $contactName ($cleanNumber).', isError: true);
     }
   }
 
-  void _showSnackBar(BuildContext context, String message) {
+  void _showSnackBar(BuildContext context, String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 16)),
         duration: const Duration(seconds: 3),
-        backgroundColor: AppColors.primaryBlue,
+        backgroundColor: isError ? AppColors.sosRed : AppColors.primaryBlue,
       ),
     );
   }
@@ -201,7 +204,11 @@ class PinAccessScreen extends StatelessWidget {
                 // Emergency Call button
                 OutlinedButton.icon(
                   onPressed: () {
-                    _callEmergencyContact(context, authProvider.user?.contactoEmergenciaNombre);
+                    _callEmergencyContact(
+                      context,
+                      authProvider.user?.contactoEmergenciaNombre,
+                      authProvider.user?.contactoEmergenciaTelefono,
+                    );
                   },
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 52),

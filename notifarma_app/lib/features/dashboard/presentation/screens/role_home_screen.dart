@@ -92,6 +92,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
 
+    final pacienteNombre = _resumenCuidador?['paciente_nombre'] as String?;
     final totalMeds = _resumenCuidador?['total_medicamentos_activos'] ?? 0;
     final totalTomasHoy = _resumenCuidador?['total_tomas_hoy'] ?? 0;
     final totalTomadasHoy = _resumenCuidador?['total_tomadas_hoy'] ?? 0;
@@ -205,6 +206,51 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                 color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: pacienteNombre != null
+                                    ? AppColors.primaryBlue.withValues(alpha: 0.12)
+                                    : AppColors.afternoonOrange.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: pacienteNombre != null
+                                      ? AppColors.primaryBlue.withValues(alpha: 0.3)
+                                      : AppColors.afternoonOrange.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    pacienteNombre != null
+                                        ? Icons.favorite_rounded
+                                        : Icons.person_search_rounded,
+                                    size: 14,
+                                    color: pacienteNombre != null
+                                        ? AppColors.primaryBlue
+                                        : AppColors.afternoonOrange,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      pacienteNombre != null
+                                          ? 'Cuidando a: $pacienteNombre'
+                                          : 'Sin paciente vinculado',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: pacienteNombre != null
+                                            ? AppColors.primaryBlue
+                                            : AppColors.afternoonOrange,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -299,7 +345,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                   ),
                                 ),
                                 Text(
-                                  proximoMed['dosis'] ?? '1 tableta',
+                                  (proximoMed['hora_formateada'] != null ? '${proximoMed['hora_formateada']} • ' : '') + (proximoMed['dosis'] ?? '1 tableta'),
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,

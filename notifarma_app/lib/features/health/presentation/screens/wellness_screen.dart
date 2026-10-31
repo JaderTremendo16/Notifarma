@@ -23,21 +23,31 @@ class _WellnessScreenState extends State<WellnessScreen> {
     });
   }
 
-  void _callEmergencyContact(BuildContext context, String? name, String? phone) async {
-    final contactName = name ?? 'Contacto de Emergencia';
-    final rawPhone = (phone != null && phone.trim().isNotEmpty) ? phone.trim() : '123';
-    final Uri url = Uri.parse('tel:$rawPhone');
+  void _hacerLlamada(BuildContext context, String numero, String destinatario) async {
+    final cleanNumber = numero.replaceAll(RegExp(r'\s+|-'), '').trim();
+    if (cleanNumber.isEmpty) {
+      _showSnackBar(context, 'No hay un número válido configurado para $destinatario.', isError: true);
+      return;
+    }
+
+    final Uri url = Uri(scheme: 'tel', path: cleanNumber);
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url);
       } else {
         if (!context.mounted) return;
-        _showSnackBar(context, 'Marcando a $contactName ($rawPhone)...');
+        _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).', isError: true);
       }
     } catch (_) {
       if (!context.mounted) return;
-      _showSnackBar(context, 'Marcando a $contactName ($rawPhone)...');
+      _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).', isError: true);
     }
+  }
+
+  void _callEmergencyContact(BuildContext context, String? name, String? phone) {
+    final contactName = (name != null && name.trim().isNotEmpty) ? name.trim() : 'Contacto de Emergencia';
+    final targetPhone = (phone != null && phone.trim().isNotEmpty) ? phone.trim() : '123';
+    _hacerLlamada(context, targetPhone, contactName);
   }
 
   void _triggerSosAlert(BuildContext context, String? name, String? phone) {
@@ -52,9 +62,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
             Text('¡ALERTA SOS!', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.sosRed)),
           ],
         ),
-        content: Text(
-          'Se ha activado la alerta de auxilio de emergencia para ${name ?? "su contacto principal"}. ¿Desea realizar la llamada de auxilio ahora mismo?',
-          style: const TextStyle(fontSize: 18),
+        content: const Text(
+          'Se activará la llamada directa a emergencias (123). ¿Desea realizar la llamada de auxilio ahora mismo?',
+          style: TextStyle(fontSize: 18),
         ),
         actions: [
           TextButton(
@@ -64,23 +74,23 @@ class _WellnessScreenState extends State<WellnessScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(ctx);
-              _callEmergencyContact(context, name, phone);
+              _hacerLlamada(context, '123', 'Línea de Emergencia (123)');
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.sosRed),
             icon: const Icon(Icons.phone_in_talk_rounded, color: Colors.white),
-            label: const Text('LLAMAR AHORA', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text('LLAMAR AL 123', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
     );
   }
 
-  void _showSnackBar(BuildContext context, String message) {
+  void _showSnackBar(BuildContext context, String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 16)),
         duration: const Duration(seconds: 3),
-        backgroundColor: AppColors.primaryBlue,
+        backgroundColor: isError ? AppColors.sosRed : AppColors.primaryBlue,
       ),
     );
   }

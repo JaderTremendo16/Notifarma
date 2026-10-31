@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
@@ -268,11 +269,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           TextFormField(
                             controller: _edadController,
                             keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(3),
+                            ],
                             style: GoogleFonts.outfit(fontSize: 16),
                             decoration: const InputDecoration(
                               hintText: 'Ej. 72',
                               prefixIcon: Icon(Icons.cake_outlined, size: 20),
                             ),
+                            validator: (value) {
+                              if (value != null && value.trim().isNotEmpty) {
+                                final edadNum = int.tryParse(value.trim());
+                                if (edadNum == null || edadNum < 1 || edadNum > 130) {
+                                  return 'Ingrese una edad válida (1 a 130)';
+                                }
+                              }
+                              return null;
+                            },
                           ),
                           const SizedBox(height: 14),
 
@@ -307,11 +321,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           TextFormField(
                             controller: _contactoTelefonoController,
                             keyboardType: TextInputType.phone,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(15),
+                            ],
                             style: GoogleFonts.outfit(fontSize: 16),
                             decoration: const InputDecoration(
                               hintText: 'Ej. 3001234567',
                               prefixIcon: Icon(Icons.phone_outlined, size: 20),
                             ),
+                            validator: (value) {
+                              if (value != null && value.trim().isNotEmpty) {
+                                final clean = value.replaceAll(RegExp(r'\s+|-'), '').trim();
+                                if (clean.length < 7 || clean.length > 15) {
+                                  return 'Debe contener entre 7 y 15 dígitos';
+                                }
+                              }
+                              return null;
+                            },
                           ),
                         ],
                       ],

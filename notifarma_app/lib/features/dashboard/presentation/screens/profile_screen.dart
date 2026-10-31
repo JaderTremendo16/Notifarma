@@ -151,6 +151,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           isDark,
                         ),
                       ],
+                      if (user?.cuidadorNombre != null && user!.cuidadorNombre!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _buildInfoRow(
+                          Icons.verified_user_rounded,
+                          'Familiar Vinculado',
+                          '${user.cuidadorNombre} (${user.cuidadorEmail ?? "Cuidador"})',
+                          isDark,
+                        ),
+                      ],
                     ],
                   ),
                 ),

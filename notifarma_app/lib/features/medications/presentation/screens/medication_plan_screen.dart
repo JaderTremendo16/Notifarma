@@ -17,7 +17,10 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<MedicationProvider>(context, listen: false).fetchMedicationsData();
+      Provider.of<MedicationProvider>(
+        context,
+        listen: false,
+      ).fetchMedicationsData();
     });
   }
 
@@ -100,11 +103,15 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (nombreCtrl.text.trim().isEmpty) return;
-                  final provider = Provider.of<MedicationProvider>(context, listen: false);
+                  final provider = Provider.of<MedicationProvider>(
+                    context,
+                    listen: false,
+                  );
                   final success = await provider.createMedication(
                     nombre: nombreCtrl.text.trim(),
                     dosis: dosisCtrl.text.trim(),
-                    frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
+                    frecuenciaHoras:
+                        int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
                     horaInicio: horaCtrl.text.trim(),
                     stockActual: int.tryParse(stockCtrl.text.trim()) ?? 30,
                   );
@@ -114,7 +121,9 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                       Navigator.pop(ctx);
                     }
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Medicamento guardado en el pastillero')),
+                      const SnackBar(
+                        content: Text('Medicamento guardado en el pastillero'),
+                      ),
                     );
                   }
                 },
@@ -131,9 +140,7 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
   Widget build(BuildContext context) {
     final medProvider = Provider.of<MedicationProvider>(context);
     final proximo = medProvider.proximoMedicamento;
-    final meds = medProvider.filteredMedications.isNotEmpty
-        ? medProvider.filteredMedications
-        : medProvider.medications;
+    final meds = medProvider.filteredMedications;
 
     return Column(
       children: [
@@ -168,21 +175,46 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                             ),
                             IconButton(
                               onPressed: _showAddMedicationModal,
-                              icon: const Icon(Icons.add_circle_rounded, color: AppColors.primaryBlue, size: 30),
+                              icon: const Icon(
+                                Icons.add_circle_rounded,
+                                color: AppColors.primaryBlue,
+                                size: 30,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 10),
 
-                        // Time filter pills (Mañana / Tarde / Noche)
-                        Row(
-                          children: [
-                            _buildFilterChip('Mañana', '🌅 Mañana', medProvider),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Tarde', '☀️ Tarde', medProvider),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Noche', '🌙 Noche', medProvider),
-                          ],
+                        // Time filter pills (Todos / Mañana / Tarde / Noche)
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              _buildFilterChip(
+                                'Todos',
+                                '📋 Todos',
+                                medProvider,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildFilterChip(
+                                'Mañana',
+                                '🌅 Mañana',
+                                medProvider,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildFilterChip(
+                                'Tarde',
+                                '☀️ Tarde',
+                                medProvider,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildFilterChip(
+                                'Noche',
+                                '🌙 Noche',
+                                medProvider,
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
 
@@ -197,11 +229,18 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                             ),
                             child: const Column(
                               children: [
-                                Icon(Icons.medication_liquid_rounded, size: 48, color: AppColors.textSecondary),
+                                Icon(
+                                  Icons.medication_liquid_rounded,
+                                  size: 48,
+                                  color: AppColors.textSecondary,
+                                ),
                                 SizedBox(height: 8),
                                 Text(
                                   'No hay medicamentos registrados en esta jornada.',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ],
                             ),
@@ -211,10 +250,15 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: meds.length,
-                            separatorBuilder: (context, index) => const SizedBox(height: 12),
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 12),
                             itemBuilder: (context, index) {
                               final m = meds[index];
-                              return _buildMedicationListItem(context, m, medProvider);
+                              return _buildMedicationListItem(
+                                context,
+                                m,
+                                medProvider,
+                              );
                             },
                           ),
                       ],
@@ -226,10 +270,23 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
     );
   }
 
-  Widget _buildHighlightCard(Map<String, dynamic>? proximo, MedicationProvider provider) {
-    final title = proximo != null ? proximo['nombre'] : (provider.medications.isNotEmpty ? provider.medications.first.nombre : 'Losartán Potásico');
-    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta con agua') : '08:00 AM • 1 tableta con agua';
-    final medId = proximo != null ? proximo['medicamento_id'] : (provider.medications.isNotEmpty ? provider.medications.first.id : null);
+  Widget _buildHighlightCard(
+    Map<String, dynamic>? proximo,
+    MedicationProvider provider,
+  ) {
+    final title = proximo != null
+        ? proximo['nombre']
+        : (provider.medications.isNotEmpty
+              ? provider.medications.first.nombre
+              : 'Losartán Potásico');
+    final dosis = proximo != null
+        ? (proximo['dosis'] ?? '1 tableta con agua')
+        : '08:00 AM • 1 tableta con agua';
+    final medId = proximo != null
+        ? proximo['medicamento_id']
+        : (provider.medications.isNotEmpty
+              ? provider.medications.first.id
+              : null);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -253,7 +310,10 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.lightOrange,
                   borderRadius: BorderRadius.circular(16),
@@ -274,7 +334,11 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
                   color: AppColors.accentOrange,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.access_time_filled_rounded, color: Colors.white, size: 24),
+                child: const Icon(
+                  Icons.access_time_filled_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ],
           ),
@@ -324,32 +388,49 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
           ElevatedButton.icon(
             onPressed: () async {
               if (medId != null) {
-                final ok = await provider.registrarToma(medId.toString(), 'tomado');
+                final ok = await provider.registrarToma(
+                  medId.toString(),
+                  'tomado',
+                );
                 if (!mounted) return;
                 if (ok) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('¡Excelente! Toma registrada correctamente 🎉'),
+                      content: Text(
+                        '¡Excelente! Toma registrada correctamente 🎉',
+                      ),
                       backgroundColor: AppColors.successGreen,
                     ),
                   );
                 }
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Agregue un medicamento en su pastillero')),
+                  const SnackBar(
+                    content: Text('Agregue un medicamento en su pastillero'),
+                  ),
                 );
               }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accentOrange,
               minimumSize: const Size(double.infinity, 58),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               elevation: 4,
             ),
-            icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 28),
+            icon: const Icon(
+              Icons.check_circle_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
             label: const Text(
               '¡YA LA TOMÉ!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -358,18 +439,30 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
           OutlinedButton.icon(
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Recordatorio pospuesto por 15 minutos ⏰')),
+                const SnackBar(
+                  content: Text('Recordatorio pospuesto por 15 minutos ⏰'),
+                ),
               );
             },
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 48),
               side: const BorderSide(color: AppColors.borderGrey, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
             ),
-            icon: const Icon(Icons.history_toggle_off_rounded, color: AppColors.textSecondary, size: 20),
+            icon: const Icon(
+              Icons.history_toggle_off_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
             label: const Text(
               'Recordarme en 15 minutos',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textSecondary,
+              ),
             ),
           ),
         ],
@@ -377,29 +470,31 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
     );
   }
 
-  Widget _buildFilterChip(String key, String label, MedicationProvider provider) {
+  Widget _buildFilterChip(
+    String key,
+    String label,
+    MedicationProvider provider,
+  ) {
     final isSelected = provider.selectedFilter == key;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => provider.setFilter(key),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.primaryBlue : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected ? AppColors.primaryBlue : AppColors.borderGrey,
-              width: 1.5,
-            ),
+    return GestureDetector(
+      onTap: () => provider.setFilter(key),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryBlue : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSelected ? AppColors.primaryBlue : AppColors.borderGrey,
+            width: 1.5,
           ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : AppColors.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
@@ -407,7 +502,11 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
     );
   }
 
-  Widget _buildMedicationListItem(BuildContext context, dynamic m, MedicationProvider provider) {
+  Widget _buildMedicationListItem(
+    BuildContext context,
+    dynamic m,
+    MedicationProvider provider,
+  ) {
     final hora = DateFormatter.formatTimeString(m.horaInicio);
     final dosisTxt = m.dosis ?? '1 tableta con agua';
 
@@ -426,7 +525,11 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
               color: AppColors.primaryBlue.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.medication, color: AppColors.primaryBlue, size: 28),
+            child: const Icon(
+              Icons.medication,
+              color: AppColors.primaryBlue,
+              size: 28,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -435,24 +538,35 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
               children: [
                 Text(
                   m.nombre,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '$hora • $dosisTxt',
-                  style: const TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
           ),
           ElevatedButton(
             onPressed: () async {
-              final ok = await provider.registrarToma(m.id.toString(), 'tomado');
+              final ok = await provider.registrarToma(
+                m.id.toString(),
+                'tomado',
+              );
               if (!context.mounted) return;
               if (ok) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Toma de ${m.nombre} registrada correctamente 🎉'),
+                    content: Text(
+                      'Toma de ${m.nombre} registrada correctamente 🎉',
+                    ),
                     backgroundColor: AppColors.successGreen,
                   ),
                 );
@@ -462,9 +576,14 @@ class _MedicationPlanScreenState extends State<MedicationPlanScreen> {
               backgroundColor: AppColors.accentOrange,
               minimumSize: const Size(80, 44),
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: const Text('Tomar', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Tomar',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
