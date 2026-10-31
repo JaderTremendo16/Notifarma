@@ -24,50 +24,11 @@ class EstadoAnimoResponse(BaseModel):
         from_attributes = True
 
 
-# ─── Sintoma (catálogo) ───────────────────────────────────────────────────────
-
-class SintomaResponse(BaseModel):
-    id:     UUID
-    nombre: str
-
-    class Config:
-        from_attributes = True
-
-
-# ─── RegistroSintoma ──────────────────────────────────────────────────────────
-
-class RegistroSintomaCreate(BaseModel):
-    sintoma_id:   Optional[UUID] = None   # id del catálogo
-    sintoma_otro: Optional[str]  = None   # texto libre cuando el usuario elige "Otro"
-    intensidad:   IntensidadEnum
-    observacion:  Optional[str]  = None
-
-    @model_validator(mode="after")
-    def validar_al_menos_uno(self) -> "RegistroSintomaCreate":
-        if self.sintoma_id is None and (self.sintoma_otro is None or self.sintoma_otro.strip() == ""):
-            raise ValueError("Debe proveer sintoma_id o sintoma_otro")
-        return self
-
-
-class RegistroSintomaResponse(BaseModel):
-    id:           UUID
-    paciente_id:  UUID
-    sintoma_id:   Optional[UUID]
-    sintoma_otro: Optional[str]
-    intensidad:   IntensidadEnum
-    observacion:  Optional[str]
-    fecha_hora:   datetime
-    created_at:   datetime
-
-    class Config:
-        from_attributes = True
-
-
 # ─── Historial ────────────────────────────────────────────────────────────────
 
 class HistorialResponse(BaseModel):
     animos:   List[EstadoAnimoResponse]
-    sintomas: List[RegistroSintomaResponse]
+    sintomas: List[dict] = []
 
 
 # ─── Recomendacion ────────────────────────────────────────────────────────────

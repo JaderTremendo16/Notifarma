@@ -160,7 +160,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
                         ),
                         const SizedBox(height: 20),
 
-                        // VITAL / HEALTH CARD
+                        // TARJETA DE RECOMENDACIÓN DE SALUD REAL
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
@@ -183,10 +183,10 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: AppColors.lightGreen,
+                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
-                                    child: const Icon(Icons.favorite_rounded, color: AppColors.successGreen, size: 30),
+                                    child: const Icon(Icons.tips_and_updates_rounded, color: AppColors.primaryBlue, size: 28),
                                   ),
                                   const SizedBox(width: 14),
                                   Expanded(
@@ -194,7 +194,7 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'PRESIÓN ARTERIAL',
+                                          'CONSEJO DE BIENESTAR',
                                           style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.bold,
@@ -204,20 +204,11 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          '120 / 80 mmHg',
+                                          'Recomendación del día',
                                           style: TextStyle(
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.w900,
-                                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        const Text(
-                                          '✓ Nivel Normal y Seguro',
-                                          style: TextStyle(
-                                            fontSize: 15,
+                                            fontSize: 18,
                                             fontWeight: FontWeight.bold,
-                                            color: AppColors.successGreen,
+                                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                                           ),
                                         ),
                                       ],
@@ -225,24 +216,34 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                   ),
                                 ],
                               ),
-                              Divider(height: 24, color: isDark ? AppColors.borderDark : AppColors.borderLight),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Icon(Icons.shield_outlined, color: AppColors.primaryBlue, size: 22),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      recommendation,
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-                                        height: 1.35,
+                              const SizedBox(height: 14),
+                              Container(
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.shield_outlined, color: AppColors.primaryBlue, size: 22),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        recommendation,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                                          height: 1.4,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ],
                           ),

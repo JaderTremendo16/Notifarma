@@ -32,32 +32,6 @@ class EstadoAnimo(Base):
     created_at  = Column(DateTime, default=datetime.utcnow)
 
 
-class Sintoma(Base):
-    """
-    Catálogo fijo de síntomas — solo lectura para el usuario.
-    Se precarga al iniciar el servicio si la tabla está vacía.
-    Valores iniciales: Dolor de cabeza, Fatiga, Mareo, Náuseas, Dolor muscular.
-    """
-    __tablename__ = "sintomas"
-
-    id     = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    nombre = Column(String, nullable=False, unique=True)
-
-
-class RegistroSintoma(Base):
-    """Registro de un síntoma reportado por el paciente."""
-    __tablename__ = "registros_sintoma"
-
-    id           = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    paciente_id  = Column(UUID(as_uuid=True), nullable=False)
-    sintoma_id   = Column(UUID(as_uuid=True), ForeignKey("sintomas.id"), nullable=True)
-    sintoma_otro = Column(String, nullable=True)   # cuando el usuario elige "Otro" y escribe libremente
-    intensidad   = Column(Enum(IntensidadEnum, name="intensidad_enum"), nullable=False)
-    observacion  = Column(String, nullable=True)
-    fecha_hora   = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_at   = Column(DateTime, default=datetime.utcnow)
-
-
 class CitaMedica(Base):
     """Citas médicas programadas del paciente."""
     __tablename__ = "citas_medicas"

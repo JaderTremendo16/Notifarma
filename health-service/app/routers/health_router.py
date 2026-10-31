@@ -7,13 +7,10 @@ from uuid import UUID
 from datetime import datetime, date, timedelta
 
 from app.database import get_db
-from app.models.health_model import EstadoAnimo, Sintoma, RegistroSintoma, CitaMedica
+from app.models.health_model import EstadoAnimo, CitaMedica
 from app.schemas.health_schema import (
     EstadoAnimoCreate,
     EstadoAnimoResponse,
-    SintomaResponse,
-    RegistroSintomaCreate,
-    RegistroSintomaResponse,
     HistorialResponse,
     RecomendacionResponse,
     CitaMedicaCreate,
@@ -98,49 +95,6 @@ def animo_hoy(request: Request, db: Session = Depends(get_db)):
     )
 
 
-# ─── Sintomas ─────────────────────────────────────────────────────────────────
-
-@router.get("/sintomas/catalogo", response_model=List[SintomaResponse])
-def catalogo_sintomas(db: Session = Depends(get_db)):
-    """Devuelve el catalogo fijo de sintomas disponibles. No requiere autenticacion."""
-    return db.query(Sintoma).order_by(Sintoma.nombre).all()
-
-
-@router.post("/sintomas", response_model=List[RegistroSintomaResponse], status_code=201)
-def registrar_sintomas(
-    datos: List[RegistroSintomaCreate],
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    """
-    Registra uno o varios sintomas del paciente en un solo request.
-    Cada item puede usar sintoma_id (del catalogo) o sintoma_otro (texto libre).
-    """
-    if not datos:
-        raise HTTPException(status_code=400, detail="Debe enviar al menos un sintoma")
-
-    paciente_id = _get_paciente_id(request)
-    creados = []
-
-    for item in datos:
-        registro = RegistroSintoma(
-            paciente_id=paciente_id,
-            sintoma_id=item.sintoma_id,
-            sintoma_otro=item.sintoma_otro,
-            intensidad=item.intensidad,
-            observacion=item.observacion,
-            fecha_hora=datetime.utcnow(),
-        )
-        db.add(registro)
-        creados.append(registro)
-
-    db.commit()
-    for r in creados:
-        db.refresh(r)
-
-    return creados
-
-
 # ─── Historial ────────────────────────────────────────────────────────────────
 
 @router.get("/historial", response_model=HistorialResponse)
@@ -150,7 +104,7 @@ def historial(
     db: Session = Depends(get_db),
 ):
     """
-    Devuelve el historial de animos y sintomas del paciente en los ultimos N dias.
+    Devuelve el historial de animos del paciente en los ultimos N dias.
     Parametro opcional: dias (default 7).
     """
     paciente_id = _get_paciente_id(request)
@@ -166,17 +120,7 @@ def historial(
         .all()
     )
 
-    sintomas = (
-        db.query(RegistroSintoma)
-        .filter(
-            RegistroSintoma.paciente_id == paciente_id,
-            RegistroSintoma.fecha_hora >= desde,
-        )
-        .order_by(RegistroSintoma.fecha_hora.desc())
-        .all()
-    )
-
-    return HistorialResponse(animos=animos, sintomas=sintomas)
+    return HistorialResponse(animos=animos, sintomas=[])
 
 
 # ─── Recomendacion del dia ────────────────────────────────────────────────────
@@ -185,7 +129,7 @@ def historial(
 def recomendacion_hoy(request: Request, db: Session = Depends(get_db)):
     """
     Devuelve un mensaje de bienestar calculado con un motor de reglas basado
-    en el ultimo estado de animo y los sintomas registrados hoy por el paciente.
+    en el ultimo estado de animo registrado hoy por el paciente.
 
     Este endpoint NO diagnostica enfermedades ni recomienda medicamentos.
     Solo ofrece consejos generales de autocuidado.
@@ -204,18 +148,8 @@ def recomendacion_hoy(request: Request, db: Session = Depends(get_db)):
         .first()
     )
 
-    # Sintomas del dia
-    sintomas_hoy = (
-        db.query(RegistroSintoma)
-        .filter(
-            RegistroSintoma.paciente_id == paciente_id,
-            RegistroSintoma.fecha_hora >= inicio,
-        )
-        .all()
-    )
-
     animo_valor = ultimo_animo.animo.value if ultimo_animo else None
-    mensaje = evaluar_bienestar(animo_valor, sintomas_hoy)
+    mensaje = evaluar_bienestar(animo_valor)
 
     return RecomendacionResponse(mensaje=mensaje)
 

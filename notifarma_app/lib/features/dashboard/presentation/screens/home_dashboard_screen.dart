@@ -431,11 +431,60 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
   bool _doseConfirmed = false;
 
   Widget _buildHeroCard(Map<String, dynamic>? proximo, MedicationProvider provider, bool isDark) {
-    final title = proximo != null ? proximo['nombre'] : (provider.medications.isNotEmpty ? provider.medications.first.nombre : 'Sin medicamentos pendientes');
-    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta') : '1 tableta';
+    // Si no hay medicamentos en el pastillero
+    if (provider.medications.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.cardDark : Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.medication_outlined, color: AppColors.primaryBlue, size: 36),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Pastillero Vacío',
+              style: GoogleFonts.outfit(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'No tienes medicamentos registrados aún.\nToca el botón "+" para agregar tu primer medicamento.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final title = proximo != null ? proximo['nombre'] : provider.medications.first.nombre;
+    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta') : provider.medications.first.dosis;
     final horaFormateada = proximo != null ? (proximo['hora_formateada'] as String?) : null;
     final infoHorario = horaFormateada != null ? '$horaFormateada • $dosis' : dosis;
-    final medId = proximo != null ? proximo['medicamento_id'] : (provider.medications.isNotEmpty ? provider.medications.first.id : null);
+    final medId = proximo != null ? proximo['medicamento_id'] : provider.medications.first.id;
 
     final isAlreadyTaken = medId != null && provider.isDoseTakenRecently(medId.toString());
 
