@@ -33,7 +33,12 @@ class DateFormatter {
   /// Formats a time string ("08:00:00" or "08:00") into 12-hour format ("08:00 AM")
   static String formatTimeString(String timeStr) {
     try {
-      final parts = timeStr.split(':');
+      final clean = timeStr.trim();
+      if (clean.contains('T') || clean.contains('-')) {
+        final dt = parseUtcToLocal(clean);
+        return DateFormat('hh:mm a').format(dt);
+      }
+      final parts = clean.split(':');
       final hour = int.parse(parts[0]);
       final minute = int.parse(parts[1]);
       final now = DateTime.now();

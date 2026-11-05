@@ -39,6 +39,15 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     final stockCtrl = TextEditingController(text: med.stockActual.toString());
     final stockMinCtrl = TextEditingController(text: med.stockMinimoAlerta.toString());
 
+    // Extraer hora inicial para el TimePicker
+    TimeOfDay selectedTime;
+    try {
+      final parts = med.horaInicio.split(':');
+      selectedTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+    } catch (_) {
+      selectedTime = TimeOfDay.now();
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -46,104 +55,141 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Editar Medicamento',
-                style: Theme.of(ctx).textTheme.headlineMedium,
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final formattedTime = DateFormatter.formatTimeString(horaCtrl.text.trim());
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 24,
+                right: 24,
+                top: 24,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nombreCtrl,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del Medicamento',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: dosisCtrl,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Dosis (ej. 500mg / 1 tableta)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: frecuenciaCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 18),
+                  Text(
+                    'Editar Medicamento',
+                    style: Theme.of(ctx).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nombreCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Medicamento',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: dosisCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Dosis (ej. 500mg / 1 tableta)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // SELECTOR INTERACTIVO DE HORA (TimePicker)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: modalCtx,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() {
+                          selectedTime = picked;
+                          final h = picked.hour.toString().padLeft(2, '0');
+                          final m = picked.minute.toString().padLeft(2, '0');
+                          horaCtrl.text = '$h:$m:00';
+                        });
+                      }
+                    },
+                    child: InputDecorator(
                       decoration: const InputDecoration(
-                        labelText: 'Cada cuántas hrs',
+                        labelText: 'Hora de la Primera Toma',
                         border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.primaryBlue),
+                        suffixIcon: Icon(Icons.arrow_drop_down_rounded, color: AppColors.primaryBlue),
+                      ),
+                      child: Text(
+                        formattedTime.isNotEmpty ? formattedTime : 'Seleccionar Hora',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: stockCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 18),
-                      decoration: const InputDecoration(
-                        labelText: 'Stock Actual',
-                        border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: frecuenciaCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Cada cuántas hrs',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: stockCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Stock Actual',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: stockMinCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Alerta Stock Mínimo',
+                      border: OutlineInputBorder(),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (nombreCtrl.text.trim().isEmpty) return;
+                      final provider = Provider.of<MedicationProvider>(context, listen: false);
+                      final success = await provider.updateMedication(
+                        med.id.toString(),
+                        nombre: nombreCtrl.text.trim(),
+                        dosis: dosisCtrl.text.trim(),
+                        frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? med.frecuenciaHoras,
+                        horaInicio: horaCtrl.text.trim(),
+                        stockActual: int.tryParse(stockCtrl.text.trim()) ?? med.stockActual,
+                        stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? med.stockMinimoAlerta,
+                      );
+                      if (!mounted) return;
+                      if (success) {
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Medicamento actualizado correctamente ✏️')),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue),
+                    child: const Text('GUARDAR CAMBIOS'),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: stockMinCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Alerta Stock Mínimo',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  if (nombreCtrl.text.trim().isEmpty) return;
-                  final provider = Provider.of<MedicationProvider>(context, listen: false);
-                  final success = await provider.updateMedication(
-                    med.id.toString(),
-                    nombre: nombreCtrl.text.trim(),
-                    dosis: dosisCtrl.text.trim(),
-                    frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? med.frecuenciaHoras,
-                    horaInicio: horaCtrl.text.trim(),
-                    stockActual: int.tryParse(stockCtrl.text.trim()) ?? med.stockActual,
-                    stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? med.stockMinimoAlerta,
-                  );
-                  if (!mounted) return;
-                  if (success) {
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Medicamento actualizado correctamente ✏️')),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue),
-                child: const Text('GUARDAR CAMBIOS'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -197,9 +243,14 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     final nombreCtrl = TextEditingController();
     final dosisCtrl = TextEditingController();
     final frecuenciaCtrl = TextEditingController(text: '12');
-    final horaCtrl = TextEditingController(text: '08:00:00');
     final stockCtrl = TextEditingController(text: '30');
     final stockMinCtrl = TextEditingController(text: '5');
+
+    // Inicializar hora actual por defecto
+    TimeOfDay selectedTime = TimeOfDay.now();
+    final hStr = selectedTime.hour.toString().padLeft(2, '0');
+    final mStr = selectedTime.minute.toString().padLeft(2, '0');
+    final horaCtrl = TextEditingController(text: '$hStr:$mStr:00');
 
     showModalBottomSheet(
       context: context,
@@ -208,103 +259,140 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 24,
-            right: 24,
-            top: 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Nuevo Medicamento',
-                style: Theme.of(ctx).textTheme.headlineMedium,
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final formattedTime = DateFormatter.formatTimeString(horaCtrl.text.trim());
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 24,
+                right: 24,
+                top: 24,
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: nombreCtrl,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Nombre del Medicamento (ej. Losartán)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: dosisCtrl,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Dosis (ej. 50mg / 1 tableta)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: frecuenciaCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 18),
+                  Text(
+                    'Nuevo Medicamento',
+                    style: Theme.of(ctx).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nombreCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Medicamento (ej. Losartán)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: dosisCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Dosis (ej. 50mg / 1 tableta)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // SELECTOR INTERACTIVO DE HORA (TimePicker)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: modalCtx,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() {
+                          selectedTime = picked;
+                          final h = picked.hour.toString().padLeft(2, '0');
+                          final m = picked.minute.toString().padLeft(2, '0');
+                          horaCtrl.text = '$h:$m:00';
+                        });
+                      }
+                    },
+                    child: InputDecorator(
                       decoration: const InputDecoration(
-                        labelText: 'Cada cuántas hrs',
+                        labelText: 'Hora de la Primera Toma',
                         border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.accentOrange),
+                        suffixIcon: Icon(Icons.arrow_drop_down_rounded, color: AppColors.accentOrange),
+                      ),
+                      child: Text(
+                        formattedTime.isNotEmpty ? formattedTime : 'Seleccionar Hora',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: stockCtrl,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(fontSize: 18),
-                      decoration: const InputDecoration(
-                        labelText: 'Stock Inicial',
-                        border: OutlineInputBorder(),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: frecuenciaCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Cada cuántas hrs',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: stockCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Stock Inicial',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: stockMinCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Alerta Stock Mínimo (ej. 5)',
+                      border: OutlineInputBorder(),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (nombreCtrl.text.trim().isEmpty) return;
+                      final provider = Provider.of<MedicationProvider>(context, listen: false);
+                      final success = await provider.createMedication(
+                        nombre: nombreCtrl.text.trim(),
+                        dosis: dosisCtrl.text.trim(),
+                        frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
+                        horaInicio: horaCtrl.text.trim(),
+                        stockActual: int.tryParse(stockCtrl.text.trim()) ?? 30,
+                        stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? 5,
+                      );
+                      if (!mounted) return;
+                      if (success) {
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Medicamento guardado en el pastillero 🎉')),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentOrange),
+                    child: const Text('GUARDAR MEDICAMENTO'),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: stockMinCtrl,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(fontSize: 18),
-                decoration: const InputDecoration(
-                  labelText: 'Alerta Stock Mínimo (ej. 5)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  if (nombreCtrl.text.trim().isEmpty) return;
-                  final provider = Provider.of<MedicationProvider>(context, listen: false);
-                  final success = await provider.createMedication(
-                    nombre: nombreCtrl.text.trim(),
-                    dosis: dosisCtrl.text.trim(),
-                    frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
-                    horaInicio: horaCtrl.text.trim(),
-                    stockActual: int.tryParse(stockCtrl.text.trim()) ?? 30,
-                    stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? 5,
-                  );
-                  if (!mounted) return;
-                  if (success) {
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Medicamento guardado en el pastillero 🎉')),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentOrange),
-                child: const Text('GUARDAR MEDICAMENTO'),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

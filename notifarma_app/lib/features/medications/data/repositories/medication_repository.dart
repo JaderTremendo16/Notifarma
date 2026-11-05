@@ -128,6 +128,22 @@ class MedicationRepository {
     return [];
   }
 
+  Future<MedicationModel> actualizarStock(
+    String medId, {
+    required int stockActual,
+    int? stockMinimoAlerta,
+  }) async {
+    final Map<String, dynamic> body = {'stock_actual': stockActual};
+    if (stockMinimoAlerta != null) {
+      body['stock_minimo_alerta'] = stockMinimoAlerta;
+    }
+    final response = await _apiClient.patch(
+      '/medications/$medId/stock',
+      body: body,
+    );
+    return MedicationModel.fromJson(response);
+  }
+
   Future<Map<String, dynamic>?> getResumenCuidador() async {
     try {
       final response = await _apiClient.get('/medications/cuidador/resumen-paciente');

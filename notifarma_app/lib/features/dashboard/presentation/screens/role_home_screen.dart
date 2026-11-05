@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
 import 'package:notifarma_app/core/providers/theme_provider.dart';
+import 'package:notifarma_app/core/utils/date_formatter.dart';
 import 'package:notifarma_app/core/utils/pdf_downloader.dart';
 import 'package:notifarma_app/features/auth/presentation/widgets/link_code_dialog.dart';
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
 import 'package:notifarma_app/features/dashboard/presentation/screens/main_shell_screen.dart';
+import 'package:notifarma_app/features/health/data/repositories/health_repository.dart';
 import 'package:notifarma_app/features/medications/data/repositories/medication_repository.dart';
 import 'package:notifarma_app/shared/widgets/theme_toggle_switch.dart';
 import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
@@ -20,6 +23,7 @@ class RoleHomeScreen extends StatefulWidget {
 
 class _RoleHomeScreenState extends State<RoleHomeScreen> {
   final MedicationRepository _medRepo = MedicationRepository();
+  final HealthRepository _healthRepo = HealthRepository();
   Map<String, dynamic>? _resumenCuidador;
   bool _isLoading = true;
   bool _isDownloadingPdf = false;
@@ -79,6 +83,471 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
     }
   }
 
+  // ─── ACCIÓN 1: MODAL INSCRIBIR MEDICAMENTO PARA EL PACIENTE ───
+  void _showAddMedicationModal(BuildContext context) {
+    final nombreCtrl = TextEditingController();
+    final dosisCtrl = TextEditingController();
+    final frecuenciaCtrl = TextEditingController(text: '12');
+    final stockCtrl = TextEditingController(text: '30');
+    final stockMinCtrl = TextEditingController(text: '5');
+
+    TimeOfDay selectedTime = TimeOfDay.now();
+    final hStr = selectedTime.hour.toString().padLeft(2, '0');
+    final mStr = selectedTime.minute.toString().padLeft(2, '0');
+    final horaCtrl = TextEditingController(text: '$hStr:$mStr:00');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final formattedTime = DateFormatter.formatTimeString(horaCtrl.text.trim());
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.medication_rounded, color: AppColors.accentOrange, size: 28),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Inscribir Medicamento',
+                        style: Theme.of(ctx).textTheme.headlineMedium,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Se asociará automáticamente al plan de tu familiar.',
+                    style: TextStyle(fontSize: 13, color: AppColors.textSecondaryLight),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: nombreCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre del Medicamento (ej. Losartán)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: dosisCtrl,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Dosis (ej. 50mg / 1 tableta)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // SELECTOR INTERACTIVO DE HORA (TimePicker)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: modalCtx,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() {
+                          selectedTime = picked;
+                          final h = picked.hour.toString().padLeft(2, '0');
+                          final m = picked.minute.toString().padLeft(2, '0');
+                          horaCtrl.text = '$h:$m:00';
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Hora de la Primera Toma',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.accentOrange),
+                        suffixIcon: Icon(Icons.arrow_drop_down_rounded, color: AppColors.accentOrange),
+                      ),
+                      child: Text(
+                        formattedTime.isNotEmpty ? formattedTime : 'Seleccionar Hora',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: frecuenciaCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Cada cuántas hrs',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: stockCtrl,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(fontSize: 18),
+                          decoration: const InputDecoration(
+                            labelText: 'Stock Inicial',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: stockMinCtrl,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: const InputDecoration(
+                      labelText: 'Alerta Stock Mínimo (ej. 5)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (nombreCtrl.text.trim().isEmpty) return;
+                      try {
+                        await _medRepo.createMedication(
+                          nombre: nombreCtrl.text.trim(),
+                          dosis: dosisCtrl.text.trim(),
+                          frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
+                          horaInicio: horaCtrl.text.trim(),
+                          stockActual: int.tryParse(stockCtrl.text.trim()) ?? 30,
+                          stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? 5,
+                        );
+                        if (!mounted) return;
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _fetchCuidadorData();
+                        InAppNotificationService().show(
+                          title: '✅ Medicamento Inscrito',
+                          message: 'Se programó ${nombreCtrl.text.trim()} para tu familiar.',
+                          type: TopNotificationType.info,
+                          duration: const Duration(seconds: 4),
+                        );
+                      } catch (e) {
+                        InAppNotificationService().show(
+                          title: '❌ Error',
+                          message: 'Error al inscribir medicamento: $e',
+                          type: TopNotificationType.sosAlert,
+                          duration: const Duration(seconds: 4),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentOrange,
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                    child: const Text('GUARDAR EN PASTILLERO', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ─── ACCIÓN 2: MODAL RECARGA DE STOCK ───
+  void _showRecargarStockModal(BuildContext context, dynamic med) {
+    final cantidadCtrl = TextEditingController(text: '30');
+    final stockActual = med['stock_actual'] ?? 0;
+    final nombreMed = med['nombre'] ?? 'Medicamento';
+    final medId = med['id'] ?? med['medicamento_id'];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            const Icon(Icons.add_shopping_cart_rounded, color: AppColors.primaryBlue, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Recargar Stock',
+                style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Medicamento: $nombreMed',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Stock disponible actual: $stockActual pastillas.',
+              style: const TextStyle(fontSize: 14, color: AppColors.textSecondaryLight),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: cantidadCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              decoration: const InputDecoration(
+                labelText: '¿Cuántas unidades se adquirieron?',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.add_circle_outline_rounded, color: AppColors.primaryBlue),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('CANCELAR', style: TextStyle(color: AppColors.textSecondaryLight, fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final agregadas = int.tryParse(cantidadCtrl.text.trim()) ?? 0;
+              if (agregadas <= 0) return;
+              final nuevoStock = stockActual + agregadas;
+
+              try {
+                await _medRepo.actualizarStock(medId.toString(), stockActual: nuevoStock);
+                if (!mounted) return;
+                if (ctx.mounted) Navigator.pop(ctx);
+                _fetchCuidadorData();
+                InAppNotificationService().show(
+                  title: '📦 Stock Actualizado',
+                  message: 'Se recargaron +$agregadas unidades de $nombreMed (Total: $nuevoStock).',
+                  type: TopNotificationType.info,
+                  duration: const Duration(seconds: 4),
+                );
+              } catch (e) {
+                InAppNotificationService().show(
+                  title: '❌ Error',
+                  message: 'Error al recargar stock: $e',
+                  type: TopNotificationType.sosAlert,
+                  duration: const Duration(seconds: 4),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue),
+            child: const Text('CONFIRMAR RECARGA', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── ACCIÓN 3: MODAL AGENDAR CITA MÉDICA ───
+  void _showAgendarCitaModal(BuildContext context) {
+    final especialidadCtrl = TextEditingController();
+    final medicoCtrl = TextEditingController();
+    final lugarCtrl = TextEditingController();
+    final notasCtrl = TextEditingController();
+
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+            final timeStr = selectedTime.format(context);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_month_rounded, color: AppColors.morningBlue, size: 28),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Agendar Cita Médica',
+                          style: Theme.of(ctx).textTheme.headlineMedium,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Tu familiar recibirá una notificación automática con los detalles.',
+                      style: TextStyle(fontSize: 13, color: AppColors.textSecondaryLight),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: especialidadCtrl,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        labelText: 'Especialidad (ej. Cardiología, Control General)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: medicoCtrl,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre del Médico (opcional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: lugarCtrl,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: const InputDecoration(
+                        labelText: 'Lugar / Clínica (ej. Hospital Central)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // SELECCIÓN DE FECHA Y HORA
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              final pickedDate = await showDatePicker(
+                                context: modalCtx,
+                                initialDate: selectedDate,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                              );
+                              if (pickedDate != null) {
+                                setModalState(() => selectedDate = pickedDate);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Fecha',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.event_rounded, color: AppColors.morningBlue),
+                              ),
+                              child: Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              final pickedTime = await showTimePicker(
+                                context: modalCtx,
+                                initialTime: selectedTime,
+                              );
+                              if (pickedTime != null) {
+                                setModalState(() => selectedTime = pickedTime);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Hora',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.morningBlue),
+                              ),
+                              child: Text(timeStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notasCtrl,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Notas o indicaciones adicionales',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (especialidadCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Por favor indique la especialidad')),
+                          );
+                          return;
+                        }
+
+                        final h = selectedTime.hour.toString().padLeft(2, '0');
+                        final m = selectedTime.minute.toString().padLeft(2, '0');
+                        final fechaHoraIso = '${DateFormat('yyyy-MM-dd').format(selectedDate)}T$h:$m:00';
+
+                        try {
+                          await _healthRepo.createAppointment(
+                            especialidad: especialidadCtrl.text.trim(),
+                            medico: medicoCtrl.text.trim().isNotEmpty ? medicoCtrl.text.trim() : null,
+                            lugar: lugarCtrl.text.trim().isNotEmpty ? lugarCtrl.text.trim() : null,
+                            fechaHoraIso: fechaHoraIso,
+                            notas: notasCtrl.text.trim().isNotEmpty ? notasCtrl.text.trim() : null,
+                          );
+                          if (!mounted) return;
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          InAppNotificationService().show(
+                            title: '📅 Cita Agendada con Éxito',
+                            message: 'Se notificó a tu familiar sobre la cita de ${especialidadCtrl.text.trim()}.',
+                            type: TopNotificationType.info,
+                            duration: const Duration(seconds: 4),
+                          );
+                        } catch (e) {
+                          InAppNotificationService().show(
+                            title: '❌ Error',
+                            message: 'Error al agendar cita: $e',
+                            type: TopNotificationType.sosAlert,
+                            duration: const Duration(seconds: 4),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.morningBlue,
+                        minimumSize: const Size(double.infinity, 48),
+                      ),
+                      child: const Text('AGENDAR CITA MÉDICA', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -99,6 +568,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
     final proximoMed = _resumenCuidador?['proximo_medicamento'] as Map<String, dynamic>?;
     final alertasStock = (_resumenCuidador?['alertas_stock'] as List?) ?? [];
     final tomasHoyList = (_resumenCuidador?['tomas_hoy'] as List?) ?? [];
+    final medicamentosList = (_resumenCuidador?['medicamentos'] as List?) ?? [];
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : const Color(0xFFF8FAFC),
@@ -302,6 +772,46 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                   ),
                   const SizedBox(height: 14),
 
+                  // ─── ACCIONES ACTIVAS DEL CUIDADOR (GESTIÓN MÉDICA) ───
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showAddMedicationModal(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accentOrange,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 2,
+                          ),
+                          icon: const Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
+                          label: const Text(
+                            'Inscribir Med',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showAgendarCitaModal(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.morningBlue,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            elevation: 2,
+                          ),
+                          icon: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 20),
+                          label: const Text(
+                            'Agendar Cita',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
                   // PRÓXIMA DOSIS DEL PACIENTE
                   if (proximoMed != null)
                     Container(
@@ -395,18 +905,145 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                           ),
                           const SizedBox(height: 8),
                           ...alertasStock.map((a) => Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                padding: const EdgeInsets.symmetric(vertical: 4),
                                 child: Row(
                                   children: [
                                     const Icon(Icons.circle, size: 8, color: AppColors.afternoonOrange),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      '${a['nombre']} • Quedan ${a['stock_actual']} pastillas',
-                                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                    Expanded(
+                                      child: Text(
+                                        '${a['nombre']} • Quedan ${a['stock_actual']} pastillas',
+                                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () => _showRecargarStockModal(context, a),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.afternoonOrange,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.add_shopping_cart_rounded, color: Colors.white, size: 14),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              'Recargar',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
                               )),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+
+                  // GESTIÓN DE MEDICAMENTOS Y RECARGA DE STOCK
+                  if (medicamentosList.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.cardDark : Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'MEDICAMENTOS DE MI FAMILIAR',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                              Text(
+                                '${medicamentosList.length} activos',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryBlue),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: medicamentosList.length,
+                            separatorBuilder: (ctx, i) => const Divider(height: 16),
+                            itemBuilder: (ctx, i) {
+                              final m = medicamentosList[i];
+                              final medName = m['nombre'] ?? 'Medicamento';
+                              final dosis = m['dosis'] ?? '';
+                              final stock = m['stock_actual'] ?? 0;
+                              final isLow = stock <= (m['stock_minimo_alerta'] ?? 5);
+
+                              return Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: isLow
+                                          ? AppColors.afternoonOrange.withValues(alpha: 0.15)
+                                          : AppColors.primaryBlue.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Icon(
+                                      Icons.medication_rounded,
+                                      color: isLow ? AppColors.afternoonOrange : AppColors.primaryBlue,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          medName,
+                                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                        ),
+                                        Text(
+                                          dosis.isNotEmpty ? '$dosis • Stock: $stock' : 'Stock: $stock pastillas',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: isLow ? AppColors.afternoonOrange : AppColors.textSecondaryLight,
+                                            fontWeight: isLow ? FontWeight.bold : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: () => _showRecargarStockModal(context, m),
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      minimumSize: const Size(60, 32),
+                                      side: const BorderSide(color: AppColors.primaryBlue, width: 1.2),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    icon: const Icon(Icons.add_shopping_cart_rounded, size: 14, color: AppColors.primaryBlue),
+                                    label: const Text('+ Recargar', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primaryBlue)),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                         ],
                       ),
                     ),
