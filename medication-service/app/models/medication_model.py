@@ -21,6 +21,7 @@ class Medicamento(Base):
     paciente_id      = Column(UUID(as_uuid=True), nullable=False)
     nombre           = Column(String, nullable=False)
     dosis            = Column(String, nullable=True)
+    indicaciones     = Column(String, nullable=True)  # Indicaciones especiales (ej. tomar con comida, junto a otro med)
     frecuencia_horas = Column(Integer, nullable=False)
     hora_inicio      = Column(Time, nullable=False)
     fecha_inicio     = Column(Date, nullable=True)

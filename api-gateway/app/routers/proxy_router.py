@@ -80,7 +80,7 @@ async def _forward_request(request: Request, target_url: str, user_id: str | Non
 
 
 # ─── Auth Service Proxy ───────────────────────────────────────────────────────
-@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@router.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_auth(path: str, request: Request):
     if request.method == "OPTIONS":
         return Response(status_code=200)
@@ -94,8 +94,8 @@ async def proxy_auth(path: str, request: Request):
 
 
 # ─── Medication Service Proxy ─────────────────────────────────────────────────
-@router.api_route("/medications", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
-@router.api_route("/medications/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@router.api_route("/medications", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+@router.api_route("/medications/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_medications(request: Request, path: str = ""):
     if request.method == "OPTIONS":
         return Response(status_code=200)
@@ -110,7 +110,7 @@ async def proxy_medications(request: Request, path: str = ""):
 
 
 # ─── Health Service Proxy ─────────────────────────────────────────────────────
-@router.api_route("/health/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@router.api_route("/health/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_health(path: str, request: Request):
     if request.method == "OPTIONS":
         return Response(status_code=200)
@@ -124,7 +124,7 @@ async def proxy_health(path: str, request: Request):
 
 
 # ─── Notification Service Proxy ───────────────────────────────────────────────
-@router.api_route("/notifications/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@router.api_route("/notifications/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy_notifications(path: str, request: Request):
     if request.method == "OPTIONS":
         return Response(status_code=200)

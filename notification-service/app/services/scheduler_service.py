@@ -3,6 +3,7 @@
 import os
 import logging
 from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 import httpx
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -12,10 +13,11 @@ from app.models.notification_model import Notificacion, TipoNotificacion, Estado
 logger = logging.getLogger("notification_scheduler")
 logging.basicConfig(level=logging.INFO)
 
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 MEDICATION_SERVICE_URL = os.getenv("MEDICATION_SERVICE_URL", "http://medication-service:8002")
 HEALTH_SERVICE_URL = os.getenv("HEALTH_SERVICE_URL", "http://health-service:8003")
-CHECK_INTERVAL_MINUTES = int(os.getenv("CHECK_INTERVAL_MINUTES", "5"))
+CHECK_INTERVAL_MINUTES = int(os.getenv("CHECK_INTERVAL_MINUTES", "1"))
 
 scheduler = BackgroundScheduler()
 
@@ -34,11 +36,12 @@ def sincronizar_notificaciones():
     """
     logger.info("Ejecutando proceso de sincronización de notificaciones...")
     db = SessionLocal()
-    ahora = datetime.utcnow()
+    ahora_utc = datetime.utcnow()
+    ahora_col = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
 
     try:
         # ──────────────────────────────────────────────────────────
-        # 1. Sincronización de Medicamentos
+        # 1. Sincronización de Medicamentos (Hora Colombia)
         # ──────────────────────────────────────────────────────────
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -48,9 +51,10 @@ def sincronizar_notificaciones():
             logger.error(f"Error al conectar con medication-service ({MEDICATION_SERVICE_URL}): {e}")
             medicamentos = []
 
-        hoy = ahora.date()
-        ventana_inicio = ahora - timedelta(minutes=5)
-        ventana_fin = ahora + timedelta(minutes=10)
+        hoy_col = ahora_col.date()
+        # Ventana estricta: sólo alertar si la toma es en los próximos 5 minutos o hace máximo 2 minutos
+        ventana_inicio = ahora_col - timedelta(minutes=2)
+        ventana_fin = ahora_col + timedelta(minutes=5)
 
         for med in medicamentos:
             try:
@@ -61,8 +65,13 @@ def sincronizar_notificaciones():
                 partes = med["hora_inicio"].split(":")
                 hora_t = time(int(partes[0]), int(partes[1]), int(partes[2]) if len(partes) > 2 else 0)
 
-                toma_programada = datetime.combine(hoy, hora_t)
-                while toma_programada.date() == hoy:
+                # Si no tiene stock disponible (0 dosis), no generar aviso de "Hora de tomar"
+                # ya que se disparan las alertas de agotamiento de stock
+                stock_actual = med.get("stock_actual", 1)
+                if stock_actual <= 0:
+                    continue
+                toma_programada = datetime.combine(hoy_col, hora_t)
+                while toma_programada.date() == hoy_col:
                     if ventana_inicio <= toma_programada <= ventana_fin:
                         ya_existe = db.query(Notificacion).filter(
                             Notificacion.paciente_id == paciente_id,
@@ -83,7 +92,7 @@ def sincronizar_notificaciones():
                                 fecha_hora_programada=toma_programada,
                                 estado=EstadoNotificacion.pendiente,
                                 intentos=1,
-                                fecha_hora_ultimo_intento=ahora
+                                fecha_hora_ultimo_intento=ahora_utc
                             )
                             db.add(nueva_notif)
                             logger.info(f"Notificación creada: med {nombre} para paciente {paciente_id}")
@@ -109,15 +118,33 @@ def sincronizar_notificaciones():
                 paciente_id = c["paciente_id"]
                 especialidad = c["especialidad"]
                 lugar = c.get("lugar") or "tu centro médico"
+                direccion = c.get("direccion")
+                sitio_str = f"{lugar} ({direccion})" if direccion else lugar
                 fecha_cita = datetime.fromisoformat(c["fecha_hora"])
+                estado_cita = c.get("estado", "programada")
 
-                diferencia = fecha_cita - ahora
+                # Si la cita ya fue respondida (asistida o no_asistida), no generar recordatorios
+                if estado_cita in ["asistida", "no_asistida"]:
+                    continue
+
+                # Comparar contra la hora local de Colombia para evitar desfases
+                diferencia = fecha_cita - ahora_col
                 minutos_restantes = diferencia.total_seconds() / 60.0
 
-                # 2.1 Alerta con 1 DÍA de anticipación: entre 23h y 25h antes (1380 a 1500 minutos)
+                # Consultar cuidador vinculado para enviar alertas a AMBOS (paciente y cuidador)
+                cuidador_id = None
+                try:
+                    with httpx.Client(timeout=3.0) as client_auth:
+                        res_auth = client_auth.get(f"{AUTH_SERVICE_URL}/auth/internal/cuidador-de/{paciente_id}")
+                        if res_auth.status_code == 200:
+                            cuidador_id = res_auth.json().get("cuidador_id")
+                except Exception:
+                    pass
+
+                # 2.1 Alerta con 24 HORAS de anticipación: ventana 23h a 25h (1380 a 1500 min)
                 if 1380 <= minutos_restantes <= 1500:
-                    mensaje_1dia = f"Recordatorio: Mañana tienes tu cita médica de {especialidad}."
-                    ya_notif_1dia = db.query(Notificacion).filter(
+                    mensaje_24h_pac = f"Recordatorio: Mañana tienes tu cita médica de {especialidad} en {sitio_str}."
+                    ya_notif_24h = db.query(Notificacion).filter(
                         Notificacion.paciente_id == paciente_id,
                         Notificacion.destinatario_id == paciente_id,
                         Notificacion.referencia_id == cita_id,
@@ -125,54 +152,111 @@ def sincronizar_notificaciones():
                         Notificacion.mensaje.like("Recordatorio: Mañana%")
                     ).first()
 
-                    if not ya_notif_1dia:
+                    if not ya_notif_24h:
                         db.add(Notificacion(
                             paciente_id=paciente_id,
                             destinatario_id=paciente_id,
                             es_alerta_cuidador=False,
                             tipo=TipoNotificacion.cita,
                             referencia_id=cita_id,
-                            mensaje=mensaje_1dia,
-                            fecha_hora_programada=ahora,
+                            mensaje=mensaje_24h_pac,
+                            fecha_hora_programada=ahora_col,
                             estado=EstadoNotificacion.pendiente,
                             intentos=1,
-                            fecha_hora_ultimo_intento=ahora
+                            fecha_hora_ultimo_intento=ahora_utc
                         ))
-                        logger.info(f"Notificación de 1 día creada para cita de {especialidad} (paciente {paciente_id})")
+                        # Enviar también al cuidador si está vinculado
+                        if cuidador_id:
+                            db.add(Notificacion(
+                                paciente_id=paciente_id,
+                                destinatario_id=cuidador_id,
+                                es_alerta_cuidador=True,
+                                tipo=TipoNotificacion.cita,
+                                referencia_id=cita_id,
+                                mensaje=f"Recordatorio familiar: Mañana tu familiar tiene cita médica de {especialidad} en {sitio_str}.",
+                                fecha_hora_programada=ahora_col,
+                                estado=EstadoNotificacion.pendiente,
+                                intentos=1,
+                                fecha_hora_ultimo_intento=ahora_utc
+                            ))
+                        logger.info(f"Notificación de 24h creada para cita de {especialidad} (paciente {paciente_id})")
 
-                # 2.2 Alerta con 1 HORA previa a la cita: entre 45 y 75 minutos antes
-                if 45 <= minutos_restantes <= 75:
-                    mensaje_1hora = f"Recordatorio: En 1 hora es tu cita de {especialidad} en {lugar}."
-                    ya_notif_1hora = db.query(Notificacion).filter(
+                # 2.2 Alerta con 2 HORAS Y MEDIA (150 min) antes: ventana 135 a 165 minutos
+                if 135 <= minutos_restantes <= 165:
+                    mensaje_2h5_pac = f"Recordatorio: En 2 horas y media es tu cita de {especialidad} en {sitio_str}. Prepara tus documentos."
+                    ya_notif_2h5 = db.query(Notificacion).filter(
                         Notificacion.paciente_id == paciente_id,
                         Notificacion.destinatario_id == paciente_id,
                         Notificacion.referencia_id == cita_id,
                         Notificacion.tipo == TipoNotificacion.cita,
-                        Notificacion.mensaje.like("Recordatorio: En 1 hora%")
+                        Notificacion.mensaje.like("Recordatorio: En 2 horas y media%")
                     ).first()
 
-                    if not ya_notif_1hora:
+                    if not ya_notif_2h5:
                         db.add(Notificacion(
                             paciente_id=paciente_id,
                             destinatario_id=paciente_id,
                             es_alerta_cuidador=False,
                             tipo=TipoNotificacion.cita,
                             referencia_id=cita_id,
-                            mensaje=mensaje_1hora,
-                            fecha_hora_programada=ahora,
+                            mensaje=mensaje_2h5_pac,
+                            fecha_hora_programada=ahora_col,
                             estado=EstadoNotificacion.pendiente,
                             intentos=1,
-                            fecha_hora_ultimo_intento=ahora
+                            fecha_hora_ultimo_intento=ahora_utc
                         ))
-                        logger.info(f"Notificación de 1 hora creada para cita de {especialidad} (paciente {paciente_id})")
+                        # Enviar también al cuidador si está vinculado
+                        if cuidador_id:
+                            db.add(Notificacion(
+                                paciente_id=paciente_id,
+                                destinatario_id=cuidador_id,
+                                es_alerta_cuidador=True,
+                                tipo=TipoNotificacion.cita,
+                                referencia_id=cita_id,
+                                mensaje=f"Recordatorio familiar: En 2 horas y media es la cita de {especialidad} de tu familiar en {sitio_str}.",
+                                fecha_hora_programada=ahora_col,
+                                estado=EstadoNotificacion.pendiente,
+                                intentos=1,
+                                fecha_hora_ultimo_intento=ahora_utc
+                            ))
+                        logger.info(f"Notificación de 2.5h creada para cita de {especialidad} (paciente {paciente_id})")
+
+                # 2.3 Cierre de jornada: si pasaron más de 2 horas desde la cita y sigue sin confirmar
+                if minutos_restantes <= -120 and estado_cita == "programada":
+                    if cuidador_id:
+                        alerta_cita_perdida = db.query(Notificacion).filter(
+                            Notificacion.referencia_id == cita_id,
+                            Notificacion.destinatario_id == cuidador_id,
+                            Notificacion.mensaje.like("%asistencia a la cita no fue confirmada%")
+                        ).first()
+                        if not alerta_cita_perdida:
+                            db.add(Notificacion(
+                                paciente_id=paciente_id,
+                                destinatario_id=cuidador_id,
+                                es_alerta_cuidador=True,
+                                tipo=TipoNotificacion.cita,
+                                referencia_id=cita_id,
+                                mensaje=f"Aviso de cita médica: La asistencia a la cita de {especialidad} de tu familiar no fue confirmada.",
+                                fecha_hora_programada=ahora_col,
+                                estado=EstadoNotificacion.pendiente,
+                                intentos=1,
+                                fecha_hora_ultimo_intento=ahora_utc
+                            ))
+                            logger.info(f"Aviso enviado al cuidador: cita de {especialidad} sin confirmar")
 
             except Exception as cita_err:
                 logger.error(f"Error procesando cita {c}: {cita_err}")
 
         # ──────────────────────────────────────────────────────────
-        # 3. Reintentos y Escalado al Cuidador
+        # 3. Reintentos y Aviso por Toma Sin Confirmar al Cuidador
         # ──────────────────────────────────────────────────────────
-        umbral_reintento = ahora - timedelta(minutes=15)
+        # Reintento cada 5 minutos:
+        # Minuto -5: Aviso anticipado (intento 1)
+        # Minuto  0: Alarma de toma (intento 2)
+        # Minuto +5: Segundo aviso de insistencia (intento 3)
+        # Minuto +10: A los 10 min de la toma programada, se cierra la notificación activa
+        #             del paciente como 'sin_confirmar' y se genera la alerta al cuidador.
+        umbral_reintento = ahora_utc - timedelta(minutes=5)
         pendientes_a_reintentar = db.query(Notificacion).filter(
             Notificacion.estado == EstadoNotificacion.pendiente,
             Notificacion.fecha_hora_ultimo_intento <= umbral_reintento,
@@ -180,46 +264,49 @@ def sincronizar_notificaciones():
         ).all()
 
         for notif in pendientes_a_reintentar:
-            # Si está en intentos = 2 (a punto de generarse el tercer recordatorio) y es de tipo medicamento:
-            if notif.intentos == 2 and notif.tipo == TipoNotificacion.medicamento:
-                try:
-                    with httpx.Client(timeout=10.0) as client:
-                        res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/cuidador-de/{notif.paciente_id}")
-                        if res_auth.status_code == 200:
-                            data_auth = res_auth.json()
-                            cuidador_id = data_auth.get("cuidador_id")
-                            if cuidador_id:
-                                # Verificar que no se haya creado previamente la alerta al cuidador por este evento
-                                alerta_existente = db.query(Notificacion).filter(
-                                    Notificacion.referencia_id == notif.referencia_id,
-                                    Notificacion.destinatario_id == cuidador_id,
-                                    Notificacion.es_alerta_cuidador == True,
-                                    Notificacion.fecha_hora_programada == notif.fecha_hora_programada
-                                ).first()
+            if notif.tipo == TipoNotificacion.medicamento:
+                # Si han pasado 10 o más minutos desde la hora programada de la toma:
+                minutos_desde_programada = (ahora_col - notif.fecha_hora_programada).total_seconds() / 60.0
+                if minutos_desde_programada >= 10.0 or notif.intentos >= 3:
+                    try:
+                        with httpx.Client(timeout=10.0) as client:
+                            res_auth = client.get(f"{AUTH_SERVICE_URL}/auth/internal/cuidador-de/{notif.paciente_id}")
+                            if res_auth.status_code == 200:
+                                data_auth = res_auth.json()
+                                cuidador_id = data_auth.get("cuidador_id")
+                                if cuidador_id:
+                                    alerta_existente = db.query(Notificacion).filter(
+                                        Notificacion.referencia_id == notif.referencia_id,
+                                        Notificacion.destinatario_id == cuidador_id,
+                                        Notificacion.es_alerta_cuidador == True,
+                                        Notificacion.fecha_hora_programada == notif.fecha_hora_programada
+                                    ).first()
 
-                                if not alerta_existente:
-                                    # Extraer nombre si está en el mensaje
-                                    nombre_med = notif.mensaje.replace("Hora de tomar tu medicamento: ", "")
-                                    mensaje_cuidador = f"Tu familiar no ha confirmado la toma de {nombre_med} después de 2 recordatorios."
-                                    alerta_cuidador = Notificacion(
-                                        paciente_id=notif.paciente_id,
-                                        destinatario_id=cuidador_id,
-                                        es_alerta_cuidador=True,
-                                        tipo=TipoNotificacion.medicamento,
-                                        referencia_id=notif.referencia_id,
-                                        mensaje=mensaje_cuidador,
-                                        fecha_hora_programada=notif.fecha_hora_programada,
-                                        estado=EstadoNotificacion.pendiente,
-                                        intentos=1,
-                                        fecha_hora_ultimo_intento=ahora
-                                    )
-                                    db.add(alerta_cuidador)
-                                    logger.info(f"Alerta escalada al cuidador {cuidador_id} para paciente {notif.paciente_id}")
-                except Exception as esc_err:
-                    logger.error(f"Error al intentar escalar alerta al cuidador para paciente {notif.paciente_id}: {esc_err}")
+                                    if not alerta_existente:
+                                        nombre_med = notif.mensaje.replace("Hora de tomar tu medicamento: ", "")
+                                        mensaje_cuidador = f"Tu familiar aún no ha confirmado la toma de {nombre_med} (programada a las {notif.fecha_hora_programada.strftime('%I:%M %p')})."
+                                        alerta_cuidador = Notificacion(
+                                            paciente_id=notif.paciente_id,
+                                            destinatario_id=cuidador_id,
+                                            es_alerta_cuidador=True,
+                                            tipo=TipoNotificacion.medicamento,
+                                            referencia_id=notif.referencia_id,
+                                            mensaje=mensaje_cuidador,
+                                            fecha_hora_programada=notif.fecha_hora_programada,
+                                            estado=EstadoNotificacion.pendiente,
+                                            intentos=1,
+                                            fecha_hora_ultimo_intento=ahora_utc
+                                        )
+                                        db.add(alerta_cuidador)
+                                        logger.info(f"Alerta enviada al cuidador {cuidador_id}: toma sin confirmar para paciente {notif.paciente_id}")
+                    except Exception as esc_err:
+                        logger.error(f"Error al enviar alerta al cuidador para paciente {notif.paciente_id}: {esc_err}")
+
+                    # Cerrar el aviso activo del paciente para no dejarlo colgado
+                    notif.estado = EstadoNotificacion.entregada
 
             notif.intentos += 1
-            notif.fecha_hora_ultimo_intento = ahora
+            notif.fecha_hora_ultimo_intento = ahora_utc
 
         db.commit()
 

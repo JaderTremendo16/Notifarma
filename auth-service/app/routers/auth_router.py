@@ -13,6 +13,7 @@ from app.schemas.user_schema import (
     UserCreate,
     UserLogin,
     UserResponse,
+    UserUpdate,
     GenerarCodigoResponse,
     VincularCodigoRequest,
 )
@@ -105,6 +106,59 @@ def me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
         if cuidador:
             resp_data.cuidador_nombre = cuidador.nombres
             resp_data.cuidador_email = cuidador.email
+
+    # Si este usuario es cuidador, buscar el paciente vinculado a su cargo
+    paciente = db.query(User).filter(User.cuidador_id == user.id).first()
+    if paciente:
+        resp_data.paciente_id = paciente.id
+        resp_data.paciente_nombre = paciente.nombres
+        resp_data.paciente_email = paciente.email
+
+    return resp_data
+
+
+@router.put("/me", response_model=UserResponse)
+def actualizar_perfil(
+    datos: UserUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Permite al usuario actualizar sus datos personales y teléfono de emergencia."""
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+    user_id = payload.get("sub")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if datos.nombres is not None and datos.nombres.strip():
+        user.nombres = datos.nombres.strip()
+    if datos.edad is not None:
+        user.edad = datos.edad
+    if datos.contacto_emergencia_nombre is not None:
+        user.contacto_emergencia_nombre = datos.contacto_emergencia_nombre.strip()
+    if datos.contacto_emergencia_telefono is not None:
+        user.contacto_emergencia_telefono = datos.contacto_emergencia_telefono.strip()
+
+    user.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+
+    resp_data = UserResponse.model_validate(user)
+    if user.cuidador_id:
+        cuidador = db.query(User).filter(User.id == user.cuidador_id).first()
+        if cuidador:
+            resp_data.cuidador_nombre = cuidador.nombres
+            resp_data.cuidador_email = cuidador.email
+
+    # Si este usuario es cuidador, buscar el paciente vinculado a su cargo
+    paciente = db.query(User).filter(User.cuidador_id == user.id).first()
+    if paciente:
+        resp_data.paciente_id = paciente.id
+        resp_data.paciente_nombre = paciente.nombres
+        resp_data.paciente_email = paciente.email
 
     return resp_data
 

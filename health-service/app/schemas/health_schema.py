@@ -43,7 +43,17 @@ class CitaMedicaCreate(BaseModel):
     especialidad: str
     medico:       Optional[str] = None
     lugar:        Optional[str] = None
+    direccion:    Optional[str] = None
     fecha_hora:   datetime
+    notas:        Optional[str] = None
+
+
+class CitaMedicaUpdate(BaseModel):
+    especialidad: Optional[str] = None
+    medico:       Optional[str] = None
+    lugar:        Optional[str] = None
+    direccion:    Optional[str] = None
+    fecha_hora:   Optional[datetime] = None
     notas:        Optional[str] = None
 
 
@@ -53,13 +63,19 @@ class CitaMedicaResponse(BaseModel):
     especialidad: str
     medico:       Optional[str]
     lugar:        Optional[str]
+    direccion:    Optional[str] = None
     fecha_hora:   datetime
     notas:        Optional[str]
+    estado:       Optional[str] = "programada"
     activo:       bool
     created_at:   datetime
 
     class Config:
         from_attributes = True
+
+
+class CitaEstadoUpdate(BaseModel):
+    estado: str  # "asistida", "no_asistida", "sin_confirmar", "programada"
 
 
 class CitaActivaItem(BaseModel):
@@ -68,5 +84,6 @@ class CitaActivaItem(BaseModel):
     especialidad: str
     medico:       Optional[str]
     lugar:        Optional[str]
+    direccion:    Optional[str] = None
     fecha_hora:   datetime
 

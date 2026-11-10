@@ -1,6 +1,7 @@
 import io
 import os
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Optional
 from uuid import UUID
 
@@ -114,19 +115,28 @@ def horarios_activos(db: Session = Depends(get_db)):
     """
     Endpoint interno para uso exclusivo del Notification Service.
     No requiere autenticación — accesible únicamente dentro de la red Docker Compose.
-    Devuelve todos los medicamentos activos con su horario para generar recordatorios.
+    Devuelve todos los medicamentos activos con su horario para generar recordatorios,
+    respetando las fechas de vigencia (fecha_inicio y fecha_fin).
     """
+    ahora_col = datetime.now(ZoneInfo("America/Bogota")).date()
     medicamentos = db.query(Medicamento).filter(Medicamento.activo == True).all()
-    return [
-        {
+    activos_vigentes = []
+    for med in medicamentos:
+        if med.fecha_inicio and ahora_col < med.fecha_inicio:
+            continue
+        if med.fecha_fin and ahora_col > med.fecha_fin:
+            continue
+        activos_vigentes.append({
             "medicamento_id":  str(med.id),
             "paciente_id":     str(med.paciente_id),
             "nombre":          med.nombre,
+            "stock_actual":    med.stock_actual,
             "frecuencia_horas": med.frecuencia_horas,
             "hora_inicio":     str(med.hora_inicio),  # "HH:MM:SS"
-        }
-        for med in medicamentos
-    ]
+            "fecha_inicio":    str(med.fecha_inicio) if med.fecha_inicio else None,
+            "fecha_fin":       str(med.fecha_fin) if med.fecha_fin else None,
+        })
+    return activos_vigentes
 
 
 @router.get("/internal/prediccion-agotamiento", response_model=List[PrediccionAgotamientoItem])
@@ -257,7 +267,7 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
     # 3. Tomas del día de hoy
     hoy_inicio = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     hoy_fin = hoy_inicio + timedelta(days=1)
-    tomas_hoy = (
+    tomas_raw = (
         db.query(Toma)
         .filter(
             Toma.paciente_id == paciente_id,
@@ -267,7 +277,23 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
         .order_by(Toma.fecha_hora_programada.asc())
         .all()
     )
-    total_tomadas_hoy = sum(1 for t in tomas_hoy if t.estado == EstadoToma.tomado)
+    total_tomadas_hoy = sum(1 for t in tomas_raw if t.estado == EstadoToma.tomado)
+
+    med_map = {m.id: m for m in medicamentos}
+    tomas_hoy = []
+    for t in tomas_raw:
+        m = med_map.get(t.medicamento_id)
+        tomas_hoy.append(TomaResponse(
+            id=t.id,
+            medicamento_id=t.medicamento_id,
+            paciente_id=t.paciente_id,
+            medicamento_nombre=m.nombre if m else "Medicamento",
+            medicamento_dosis=m.dosis if m else None,
+            fecha_hora_programada=t.fecha_hora_programada,
+            estado=t.estado,
+            fecha_hora_confirmacion=t.fecha_hora_confirmacion,
+            created_at=t.created_at,
+        ))
 
     # 4. Próximo medicamento a tomar
     proximo_data = None
@@ -587,6 +613,7 @@ def crear_medicamento(
         paciente_id=paciente_id,
         nombre=datos.nombre,
         dosis=datos.dosis,
+        indicaciones=datos.indicaciones,
         frecuencia_horas=datos.frecuencia_horas,
         hora_inicio=datos.hora_inicio,
         fecha_inicio=datos.fecha_inicio,
@@ -722,6 +749,42 @@ def registrar_toma(
     ).first()
     if not med:
         raise HTTPException(status_code=404, detail="Medicamento no encontrado")
+
+    # Protección contra tomas sin stock:
+    if datos.estado == EstadoToma.tomado and med.stock_actual <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay stock suficiente para '{med.nombre}'. Recarga el medicamento antes de registrar la toma."
+        )
+
+    # Protección de Idempotencia contra tomas repetidas:
+    # Si ya existe una toma registrada hoy para este medicamento (en cualquier estado tomado u omitido)
+    # dentro de la ventana de la dosis (últimas 2 horas), evitar duplicados.
+    umbral_duplicado = datetime.utcnow() - timedelta(hours=2)
+    toma_reciente = (
+        db.query(Toma)
+        .filter(
+            Toma.medicamento_id == med_id,
+            Toma.paciente_id == paciente_id,
+            Toma.created_at >= umbral_duplicado,
+        )
+        .order_by(Toma.created_at.desc())
+        .first()
+    )
+    if toma_reciente:
+        # Si ya existe y quieren actualizar el estado (ej. de pendiente a tomado)
+        if toma_reciente.estado != datos.estado:
+            if datos.estado == EstadoToma.tomado and toma_reciente.estado != EstadoToma.tomado:
+                if med.stock_actual > 0:
+                    med.stock_actual -= 1
+                toma_reciente.fecha_hora_confirmacion = datetime.utcnow()
+            elif toma_reciente.estado == EstadoToma.tomado and datos.estado != EstadoToma.tomado:
+                med.stock_actual += 1 # revertir stock
+                toma_reciente.fecha_hora_confirmacion = None
+            toma_reciente.estado = datos.estado
+            db.commit()
+            db.refresh(toma_reciente)
+        return toma_reciente
 
     fecha_hora_programada   = datos.fecha_hora_programada or datetime.utcnow()
     fecha_hora_confirmacion = datetime.utcnow() if datos.estado == EstadoToma.tomado else None

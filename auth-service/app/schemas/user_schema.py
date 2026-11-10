@@ -1,5 +1,6 @@
 # app/schemas/user_schema.py
 
+import re
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from uuid import UUID
@@ -47,6 +48,9 @@ class UserResponse(BaseModel):
     cuidador_id: Optional[UUID] = None
     cuidador_nombre: Optional[str] = None
     cuidador_email: Optional[str] = None
+    paciente_id: Optional[UUID] = None
+    paciente_nombre: Optional[str] = None
+    paciente_email: Optional[str] = None
     zona_horaria: str = "America/Bogota"
     #opcionales
     edad: Optional[int] = None
@@ -56,6 +60,26 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    nombres: Optional[str] = None
+    edad: Optional[int] = None
+    contacto_emergencia_nombre: Optional[str] = None
+    contacto_emergencia_telefono: Optional[str] = None
+
+    @field_validator("contacto_emergencia_telefono")
+    def validar_telefono(cls, v):
+        if v is not None:
+            if not re.match(r"^\d{7,15}$", v):
+                raise ValueError("El teléfono de emergencia debe contener entre 7 y 15 dígitos numéricos")
+        return v
+
+    @field_validator("edad")
+    def validar_edad(cls, v):
+        if v is not None and not (1 <= v <= 130):
+            raise ValueError("La edad debe estar entre 1 y 130 años")
+        return v
 
 
 # 4. Códigos de vinculación

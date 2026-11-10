@@ -80,7 +80,25 @@ def confirmar_notificacion(id: UUID, request: Request, db: Session = Depends(get
     )
 
 
-@router.post("/internal/trigger-sync")
+@router.post("/internal/cerrar-por-referencia")
+def cerrar_notificaciones_por_referencia(datos: dict, db: Session = Depends(get_db)):
+    """
+    Cierra todas las notificaciones pendientes asociadas a un ID de referencia (ej. una cita médica o toma).
+    """
+    ref_id = datos.get("referencia_id")
+    if not ref_id:
+        return {"cerradas": 0}
+    
+    pendientes = db.query(Notificacion).filter(
+        Notificacion.referencia_id == UUID(ref_id),
+        Notificacion.estado == EstadoNotificacion.pendiente
+    ).all()
+
+    for p in pendientes:
+        p.estado = EstadoNotificacion.confirmada
+
+    db.commit()
+    return {"cerradas": len(pendientes)}
 def trigger_sincronizacion_manual(db: Session = Depends(get_db)):
     """
     Endpoint de utilidad interna para disparar la sincronización inmediatamente

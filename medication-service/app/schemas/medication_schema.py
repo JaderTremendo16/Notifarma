@@ -12,6 +12,7 @@ from app.models.medication_model import EstadoToma
 class MedicamentoCreate(BaseModel):
     nombre:              str
     dosis:               Optional[str]  = None
+    indicaciones:        Optional[str]  = None
     frecuencia_horas:    int
     hora_inicio:         time
     fecha_inicio:        Optional[date] = None
@@ -23,6 +24,7 @@ class MedicamentoCreate(BaseModel):
 class MedicamentoUpdate(BaseModel):
     nombre:              Optional[str]  = None
     dosis:               Optional[str]  = None
+    indicaciones:        Optional[str]  = None
     frecuencia_horas:    Optional[int]  = None
     hora_inicio:         Optional[time] = None
     fecha_inicio:        Optional[date] = None
@@ -41,6 +43,7 @@ class MedicamentoResponse(BaseModel):
     paciente_id:         UUID
     nombre:              str
     dosis:               Optional[str]
+    indicaciones:        Optional[str] = None
     frecuencia_horas:    int
     hora_inicio:         time
     fecha_inicio:        Optional[date]
@@ -66,6 +69,8 @@ class TomaResponse(BaseModel):
     id:                     UUID
     medicamento_id:         UUID
     paciente_id:            UUID
+    medicamento_nombre:     Optional[str] = None
+    medicamento_dosis:      Optional[str] = None
     fecha_hora_programada:  datetime
     estado:                 EstadoToma
     fecha_hora_confirmacion: Optional[datetime]

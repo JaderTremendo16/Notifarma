@@ -32,6 +32,13 @@ class EstadoAnimo(Base):
     created_at  = Column(DateTime, default=datetime.utcnow)
 
 
+class EstadoCitaEnum(str, enum.Enum):
+    programada = "programada"
+    asistida   = "asistida"
+    no_asistida = "no_asistida"
+    sin_confirmar = "sin_confirmar"
+
+
 class CitaMedica(Base):
     """Citas médicas programadas del paciente."""
     __tablename__ = "citas_medicas"
@@ -40,9 +47,11 @@ class CitaMedica(Base):
     paciente_id  = Column(UUID(as_uuid=True), nullable=False, index=True)
     especialidad = Column(String, nullable=False)   # ej. Cardiología, Medicina General
     medico       = Column(String, nullable=True)    # ej. Dr. Pérez
-    lugar        = Column(String, nullable=True)    # ej. Hospital Central, Consultorio 201
+    lugar        = Column(String, nullable=True)    # ej. Hospital Central (nombre del sitio)
+    direccion    = Column(String, nullable=True)    # ej. Cra 43 # 75-12, Consultorio 304
     fecha_hora   = Column(DateTime, nullable=False) # Fecha y hora de la cita (UTC)
     notas        = Column(String, nullable=True)
+    estado       = Column(String, default="programada", nullable=False) # programada, asistida, no_asistida, sin_confirmar
     activo       = Column(Boolean, default=True, nullable=False)
     created_at   = Column(DateTime, default=datetime.utcnow)
 

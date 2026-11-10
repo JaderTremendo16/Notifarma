@@ -14,7 +14,9 @@ from app.schemas.health_schema import (
     HistorialResponse,
     RecomendacionResponse,
     CitaMedicaCreate,
+    CitaMedicaUpdate,
     CitaMedicaResponse,
+    CitaEstadoUpdate,
 )
 from app.services.wellness_rules import evaluar_bienestar
 
@@ -181,6 +183,8 @@ def citas_internas_activas(db: Session = Depends(get_db)):
             "especialidad": c.especialidad,
             "medico":       c.medico,
             "lugar":        c.lugar,
+            "direccion":    c.direccion,
+            "estado":       c.estado,
             "fecha_hora":   c.fecha_hora.isoformat()
         }
         for c in citas
@@ -203,8 +207,10 @@ def crear_cita(
         especialidad=datos.especialidad,
         medico=datos.medico,
         lugar=datos.lugar,
+        direccion=datos.direccion,
         fecha_hora=datos.fecha_hora,
         notas=datos.notas,
+        estado="programada",
     )
     db.add(nueva)
     db.commit()
@@ -231,14 +237,49 @@ def crear_cita(
 
 @router.get("/citas", response_model=List[CitaMedicaResponse])
 def listar_citas(request: Request, db: Session = Depends(get_db)):
-    """Lista todas las citas médicas activas del paciente autenticado."""
-    paciente_id = _get_paciente_id(request)
+    """Lista todas las citas médicas activas del paciente autenticado o a cargo."""
+    paciente_id, _, _ = _resolver_paciente_y_rol(request)
     return (
         db.query(CitaMedica)
         .filter(CitaMedica.paciente_id == paciente_id, CitaMedica.activo == True)
         .order_by(CitaMedica.fecha_hora.asc())
         .all()
     )
+
+
+@router.put("/citas/{cita_id}", response_model=CitaMedicaResponse)
+def actualizar_cita(
+    cita_id: UUID,
+    datos: CitaMedicaUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Permite al paciente o cuidador actualizar fecha, hora, lugar, dirección o notas de una cita."""
+    paciente_id, _, _ = _resolver_paciente_y_rol(request)
+    cita = db.query(CitaMedica).filter(
+        CitaMedica.id == cita_id,
+        CitaMedica.paciente_id == paciente_id,
+        CitaMedica.activo == True,
+    ).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail="Cita médica no encontrada")
+
+    if datos.especialidad is not None:
+        cita.especialidad = datos.especialidad
+    if datos.medico is not None:
+        cita.medico = datos.medico
+    if datos.lugar is not None:
+        cita.lugar = datos.lugar
+    if datos.direccion is not None:
+        cita.direccion = datos.direccion
+    if datos.fecha_hora is not None:
+        cita.fecha_hora = datos.fecha_hora
+    if datos.notas is not None:
+        cita.notas = datos.notas
+
+    db.commit()
+    db.refresh(cita)
+    return cita
 
 
 @router.get("/citas/{cita_id}", response_model=CitaMedicaResponse)
@@ -251,6 +292,41 @@ def detalle_cita(cita_id: UUID, request: Request, db: Session = Depends(get_db))
     ).first()
     if not cita:
         raise HTTPException(status_code=404, detail="Cita médica no encontrada")
+    return cita
+
+
+@router.patch("/citas/{cita_id}/estado", response_model=CitaMedicaResponse)
+def actualizar_estado_cita(
+    cita_id: UUID,
+    datos: CitaEstadoUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Permite al paciente o cuidador registrar asistencia ('asistida') o indicar ('no_asistida')."""
+    paciente_id, _, _ = _resolver_paciente_y_rol(request)
+    cita = db.query(CitaMedica).filter(
+        CitaMedica.id == cita_id,
+        CitaMedica.paciente_id == paciente_id,
+    ).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail="Cita médica no encontrada")
+    
+    cita.estado = datos.estado.lower()
+    db.commit()
+    db.refresh(cita)
+
+    # Si la cita fue marcada como asistida o no_asistida, cerrar automáticamente
+    # cualquier notificación pendiente asociada a esta cita en notification-service
+    if cita.estado in ["asistida", "no_asistida"]:
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/notifications/internal/cerrar-por-referencia",
+                    json={"referencia_id": str(cita.id)}
+                )
+        except Exception:
+            pass
+
     return cita
 
 
