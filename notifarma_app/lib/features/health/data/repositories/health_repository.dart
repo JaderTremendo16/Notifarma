@@ -62,6 +62,7 @@ class HealthRepository {
     required String especialidad,
     String? medico,
     String? lugar,
+    String? direccion,
     required String fechaHoraIso,
     String? notas,
   }) async {
@@ -71,9 +72,41 @@ class HealthRepository {
         'especialidad': especialidad,
         'medico': medico,
         'lugar': lugar,
+        'direccion': direccion,
         'fecha_hora': fechaHoraIso,
         'notas': notas,
       },
+    );
+    return AppointmentModel.fromJson(response);
+  }
+
+  Future<void> updateAppointmentStatus(String id, String estado) async {
+    await _apiClient.patch(
+      '/health/citas/$id/estado',
+      body: {'estado': estado},
+    );
+  }
+
+  Future<AppointmentModel> updateAppointment({
+    required String id,
+    String? especialidad,
+    String? medico,
+    String? lugar,
+    String? direccion,
+    String? fechaHoraIso,
+    String? notas,
+  }) async {
+    final Map<String, dynamic> body = {};
+    if (especialidad != null) body['especialidad'] = especialidad;
+    if (medico != null) body['medico'] = medico;
+    if (lugar != null) body['lugar'] = lugar;
+    if (direccion != null) body['direccion'] = direccion;
+    if (fechaHoraIso != null) body['fecha_hora'] = fechaHoraIso;
+    if (notas != null) body['notas'] = notas;
+
+    final response = await _apiClient.put(
+      '/health/citas/$id',
+      body: body,
     );
     return AppointmentModel.fromJson(response);
   }

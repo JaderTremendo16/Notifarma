@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
 import 'package:notifarma_app/core/providers/theme_provider.dart';
@@ -10,8 +11,9 @@ import 'package:notifarma_app/features/medications/providers/medication_provider
 import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
 import 'package:notifarma_app/shared/widgets/uiverse_loader.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeDateFormatting('es', null);
   runApp(const NotiFarmaApp());
 }
 

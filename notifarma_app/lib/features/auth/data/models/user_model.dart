@@ -9,6 +9,9 @@ class UserModel {
   final String? cuidadorId;
   final String? cuidadorNombre;
   final String? cuidadorEmail;
+  final String? pacienteId;
+  final String? pacienteNombre;
+  final String? pacienteEmail;
 
   UserModel({
     required this.id,
@@ -21,6 +24,9 @@ class UserModel {
     this.cuidadorId,
     this.cuidadorNombre,
     this.cuidadorEmail,
+    this.pacienteId,
+    this.pacienteNombre,
+    this.pacienteEmail,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -35,6 +41,9 @@ class UserModel {
       cuidadorId: json['cuidador_id'],
       cuidadorNombre: json['cuidador_nombre'],
       cuidadorEmail: json['cuidador_email'],
+      pacienteId: json['paciente_id'],
+      pacienteNombre: json['paciente_nombre'],
+      pacienteEmail: json['paciente_email'],
     );
   }
 
@@ -50,6 +59,9 @@ class UserModel {
       'cuidador_id': cuidadorId,
       'cuidador_nombre': cuidadorNombre,
       'cuidador_email': cuidadorEmail,
+      'paciente_id': pacienteId,
+      'paciente_nombre': pacienteNombre,
+      'paciente_email': pacienteEmail,
     };
   }
 }

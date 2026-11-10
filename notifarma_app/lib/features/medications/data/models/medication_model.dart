@@ -3,6 +3,7 @@ class MedicationModel {
   final String pacienteId;
   final String nombre;
   final String? dosis;
+  final String? indicaciones;
   final int frecuenciaHoras;
   final String horaInicio;
   final String? fechaInicio;
@@ -16,6 +17,7 @@ class MedicationModel {
     required this.pacienteId,
     required this.nombre,
     this.dosis,
+    this.indicaciones,
     required this.frecuenciaHoras,
     required this.horaInicio,
     this.fechaInicio,
@@ -31,6 +33,7 @@ class MedicationModel {
       pacienteId: json['paciente_id'] ?? '',
       nombre: json['nombre'] ?? '',
       dosis: json['dosis'],
+      indicaciones: json['indicaciones'],
       frecuenciaHoras: json['frecuencia_horas'] ?? 12,
       horaInicio: json['hora_inicio'] ?? '08:00:00',
       fechaInicio: json['fecha_inicio'],

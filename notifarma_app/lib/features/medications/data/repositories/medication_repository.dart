@@ -25,6 +25,7 @@ class MedicationRepository {
   Future<MedicationModel> createMedication({
     required String nombre,
     String? dosis,
+    String? indicaciones,
     required int frecuenciaHoras,
     required String horaInicio,
     String? fechaInicio,
@@ -37,6 +38,7 @@ class MedicationRepository {
       body: {
         'nombre': nombre,
         'dosis': dosis,
+        'indicaciones': indicaciones,
         'frecuencia_horas': frecuenciaHoras,
         'hora_inicio': horaInicio,
         'fecha_inicio': fechaInicio,
@@ -52,6 +54,7 @@ class MedicationRepository {
     String medId, {
     String? nombre,
     String? dosis,
+    String? indicaciones,
     int? frecuenciaHoras,
     String? horaInicio,
     int? stockActual,
@@ -60,6 +63,7 @@ class MedicationRepository {
     final Map<String, dynamic> body = {};
     if (nombre != null) body['nombre'] = nombre;
     if (dosis != null) body['dosis'] = dosis;
+    if (indicaciones != null) body['indicaciones'] = indicaciones;
     if (frecuenciaHoras != null) body['frecuencia_horas'] = frecuenciaHoras;
     if (horaInicio != null) body['hora_inicio'] = horaInicio;
     if (stockActual != null) body['stock_actual'] = stockActual;

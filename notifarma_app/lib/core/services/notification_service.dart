@@ -36,6 +36,16 @@ class NotificationService {
         }
       },
     );
+
+    // Solicitar permisos de notificación en tiempo de ejecución (Android 13+ / iOS)
+    final androidImpl = _notificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImpl != null) {
+      await androidImpl.requestNotificationsPermission();
+      try {
+        await androidImpl.requestExactAlarmsPermission();
+      } catch (_) {}
+    }
   }
 
   Future<void> showLocalNotification({
@@ -46,15 +56,18 @@ class NotificationService {
   }) async {
     if (kIsWeb) return;
 
-    const androidDetails = AndroidNotificationDetails(
-      'notifarma_reminders',
-      'Recordatorios NotiFarma',
-      channelDescription: 'Canal de alta prioridad para recordatorios de medicamentos y salud',
+    final androidDetails = AndroidNotificationDetails(
+      'notifarma_alarms_v2',
+      'Alertas Médicas NotiFarma',
+      channelDescription: 'Canal de máxima prioridad y sonido para tomas de medicamentos y citas médicas',
       importance: Importance.max,
-      priority: Priority.high,
+      priority: Priority.max,
       showWhen: true,
       playSound: true,
       enableVibration: true,
+      channelShowBadge: true,
+      groupKey: 'com.notifarma.notifications',
+      setAsGroupSummary: false,
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -63,7 +76,7 @@ class NotificationService {
       presentBadge: true,
     );
 
-    const details = NotificationDetails(
+    final details = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -83,6 +96,8 @@ class NotificationService {
     _pollingTimer = null;
   }
 
+  final Set<String> _notificacionesMostradas = {};
+
   Future<List<dynamic>> checkPendingNotifications() async {
     try {
       final response = await _apiClient.get('/notifications/pendientes');
@@ -90,6 +105,12 @@ class NotificationService {
         for (var i = 0; i < response.length; i++) {
           final item = response[i];
           final notifId = item['id'].toString();
+          
+          // Si ya se mostró esta notificación localmente, evitar hacerla sonar repetidamente
+          if (_notificacionesMostradas.contains(notifId)) {
+            continue;
+          }
+
           final mensaje = item['mensaje'] ?? 'Tienes un recordatorio pendiente';
           final tipo = item['tipo'] ?? 'medicamento';
 
@@ -103,6 +124,8 @@ class NotificationService {
             body: mensaje,
             payload: notifId,
           );
+
+          _notificacionesMostradas.add(notifId);
         }
         return response;
       }
@@ -114,10 +137,20 @@ class NotificationService {
 
   Future<bool> confirmarNotificacion(String id) async {
     try {
+      _notificacionesMostradas.remove(id);
+      if (!kIsWeb) {
+        await _notificationsPlugin.cancel(id.hashCode);
+      }
       await _apiClient.post('/notifications/$id/confirmar');
       return true;
     } catch (e) {
       return false;
+    }
+  }
+
+  Future<void> cancelarNotificacionLocal(int id) async {
+    if (!kIsWeb) {
+      await _notificationsPlugin.cancel(id);
     }
   }
 }

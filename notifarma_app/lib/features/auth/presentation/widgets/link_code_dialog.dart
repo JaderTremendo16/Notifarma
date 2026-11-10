@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
+import 'package:notifarma_app/features/medications/providers/medication_provider.dart';
+import 'package:notifarma_app/features/health/providers/health_provider.dart';
 
 class LinkCodeDialog extends StatefulWidget {
   const LinkCodeDialog({super.key});
@@ -43,10 +45,16 @@ class _LinkCodeDialogState extends State<LinkCodeDialog> {
 
     if (!mounted) return;
     if (ok) {
+      // Refrescar inmediatamente los proveedores de datos médicos
+      try {
+        Provider.of<MedicationProvider>(context, listen: false).fetchMedicationsData();
+        Provider.of<HealthProvider>(context, listen: false).fetchHealthData();
+      } catch (_) {}
+
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('¡Vinculación familiar exitosa! 🎉'),
+          content: Text('¡Vinculación familiar exitosa!'),
           backgroundColor: AppColors.successGreen,
         ),
       );

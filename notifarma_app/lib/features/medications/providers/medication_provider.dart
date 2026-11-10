@@ -108,6 +108,7 @@ class MedicationProvider extends ChangeNotifier {
   Future<bool> createMedication({
     required String nombre,
     String? dosis,
+    String? indicaciones,
     required int frecuenciaHoras,
     required String horaInicio,
     String? fechaInicio,
@@ -119,6 +120,7 @@ class MedicationProvider extends ChangeNotifier {
       await _repository.createMedication(
         nombre: nombre,
         dosis: dosis,
+        indicaciones: indicaciones,
         frecuenciaHoras: frecuenciaHoras,
         horaInicio: horaInicio,
         fechaInicio: fechaInicio,
@@ -139,6 +141,7 @@ class MedicationProvider extends ChangeNotifier {
     String medId, {
     String? nombre,
     String? dosis,
+    String? indicaciones,
     int? frecuenciaHoras,
     String? horaInicio,
     int? stockActual,
@@ -149,6 +152,7 @@ class MedicationProvider extends ChangeNotifier {
         medId,
         nombre: nombre,
         dosis: dosis,
+        indicaciones: indicaciones,
         frecuenciaHoras: frecuenciaHoras,
         horaInicio: horaInicio,
         stockActual: stockActual,

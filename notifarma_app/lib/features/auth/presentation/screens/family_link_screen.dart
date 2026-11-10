@@ -95,7 +95,7 @@ class _FamilyLinkScreenState extends State<FamilyLinkScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // TARJETA DE VINCULACIÓN ACTIVA (Si ya tiene cuidador vinculado)
+                // TARJETA DE VINCULACIÓN ACTIVA (Para Paciente con cuidador)
                 if (user?.cuidadorNombre != null && user!.cuidadorNombre!.isNotEmpty) ...[
                   Container(
                     margin: const EdgeInsets.only(bottom: 20),
@@ -144,17 +144,90 @@ class _FamilyLinkScreenState extends State<FamilyLinkScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Familiar vinculado: ${user.cuidadorNombre}',
+                                'Cuidador vinculado: ${user.cuidadorNombre}',
                                 style: GoogleFonts.outfit(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : AppColors.textPrimaryLight,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : AppColors.textPrimaryLight,
                                 ),
                               ),
                               if (user.cuidadorEmail != null) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   user.cuidadorEmail!,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                // TARJETA DE VINCULACIÓN ACTIVA (Para Cuidador con paciente a cargo)
+                if (user?.pacienteNombre != null && user!.pacienteNombre!.isNotEmpty) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: AppColors.successGreen, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.successGreen.withValues(alpha: 0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: const BoxDecoration(
+                            color: AppColors.successGreen,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.person_pin_rounded, color: Colors.white, size: 26),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'PACIENTE VINCULADO',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534),
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.successGreen),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Familiar: ${user.pacienteNombre}',
+                                style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : AppColors.textPrimaryLight,
+                                ),
+                              ),
+                              if (user.pacienteEmail != null) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  user.pacienteEmail!,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,

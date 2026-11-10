@@ -8,7 +8,7 @@ class HealthProvider extends ChangeNotifier {
   final HealthRepository _repository = HealthRepository();
 
   List<MoodModel> _todayMoods = [];
-  List<SymptomCatalogModel> _symptomCatalog = [];
+  final List<SymptomCatalogModel> _symptomCatalog = [];
   List<AppointmentModel> _appointments = [];
   String _recomendacionHoy = 'Recuerda registrar cómo te sientes hoy.';
   String? _selectedMood;
@@ -33,7 +33,6 @@ class HealthProvider extends ChangeNotifier {
       if (_todayMoods.isNotEmpty) {
         _selectedMood = _todayMoods.first.animo;
       }
-      _symptomCatalog = await _repository.getSymptomCatalog();
       _recomendacionHoy = await _repository.getRecomendacionHoy();
       _appointments = await _repository.getAppointments();
     } catch (e) {
@@ -76,6 +75,7 @@ class HealthProvider extends ChangeNotifier {
     required String especialidad,
     String? medico,
     String? lugar,
+    String? direccion,
     required String fechaHoraIso,
     String? notas,
   }) async {
@@ -84,6 +84,49 @@ class HealthProvider extends ChangeNotifier {
         especialidad: especialidad,
         medico: medico,
         lugar: lugar,
+        direccion: direccion,
+        fechaHoraIso: fechaHoraIso,
+        notas: notas,
+      );
+      _appointments = await _repository.getAppointments();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateAppointmentStatus(String id, String estado) async {
+    try {
+      await _repository.updateAppointmentStatus(id, estado);
+      _appointments = await _repository.getAppointments();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateAppointment({
+    required String id,
+    String? especialidad,
+    String? medico,
+    String? lugar,
+    String? direccion,
+    String? fechaHoraIso,
+    String? notas,
+  }) async {
+    try {
+      await _repository.updateAppointment(
+        id: id,
+        especialidad: especialidad,
+        medico: medico,
+        lugar: lugar,
+        direccion: direccion,
         fechaHoraIso: fechaHoraIso,
         notas: notas,
       );

@@ -171,6 +171,36 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> updateProfile({
+    String? nombres,
+    int? edad,
+    String? contactoEmergenciaNombre,
+    String? contactoEmergenciaTelefono,
+  }) async {
+    try {
+      _user = await _repository.updateProfile(
+        nombres: nombres,
+        edad: edad,
+        contactoEmergenciaNombre: contactoEmergenciaNombre,
+        contactoEmergenciaTelefono: contactoEmergenciaTelefono,
+      );
+      if (_user != null) {
+        await _storageService.saveUserData(
+          userId: _user!.id,
+          name: _user!.nombres,
+          role: _user!.rol,
+          emergencyContact: _user!.contactoEmergenciaNombre,
+        );
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> logout() async {
     await _storageService.clearAll();
     _user = null;

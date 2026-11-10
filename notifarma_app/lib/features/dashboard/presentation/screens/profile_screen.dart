@@ -43,6 +43,139 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   bool _downloadingPdf = false;
 
+  void _showEditProfileModal(BuildContext context, user) {
+    final nombreCtrl = TextEditingController(text: user?.nombres ?? '');
+    final edadCtrl = TextEditingController(text: user?.edad?.toString() ?? '');
+    final contactoNombreCtrl = TextEditingController(text: user?.contactoEmergenciaNombre ?? '');
+    final contactoTelCtrl = TextEditingController(text: user?.contactoEmergenciaTelefono ?? '');
+    final formKey = GlobalKey<FormState>();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            left: 24,
+            right: 24,
+            top: 24,
+          ),
+          child: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Editar Información',
+                        style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nombreCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre Completo',
+                      prefixIcon: Icon(Icons.person_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Ingresa tu nombre' : null,
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: edadCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Edad',
+                      prefixIcon: Icon(Icons.cake_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: contactoNombreCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre Contacto de Emergencia',
+                      prefixIcon: Icon(Icons.contact_phone_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: contactoTelCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: const InputDecoration(
+                      labelText: 'Teléfono Contacto de Emergencia',
+                      prefixIcon: Icon(Icons.phone_rounded),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) {
+                      if (v != null && v.trim().isNotEmpty) {
+                        final digits = v.trim().replaceAll(RegExp(r'\D'), '');
+                        if (digits.length < 7 || digits.length > 15) {
+                          return 'Debe tener entre 7 y 15 dígitos numéricos';
+                        }
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      if (formKey.currentState!.validate()) {
+                        Navigator.pop(ctx);
+                        final authP = Provider.of<AuthProvider>(context, listen: false);
+                        final ok = await authP.updateProfile(
+                          nombres: nombreCtrl.text.trim(),
+                          edad: int.tryParse(edadCtrl.text.trim()),
+                          contactoEmergenciaNombre: contactoNombreCtrl.text.trim(),
+                          contactoEmergenciaTelefono: contactoTelCtrl.text.trim(),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok
+                                ? '¡Datos actualizados con éxito! ✨'
+                                : 'Error actualizando datos: ${authP.errorMessage}'),
+                            backgroundColor: ok ? AppColors.successGreen : AppColors.sosRed,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    icon: const Icon(Icons.save_rounded, color: Colors.white),
+                    label: const Text(
+                      'GUARDAR CAMBIOS',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _downloadAdherencePdf(BuildContext context) async {
     setState(() => _downloadingPdf = true);
     try {
@@ -117,20 +250,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryBlue.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Text(
-                              (user?.rol ?? 'PACIENTE').toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primaryBlue,
+                          Row(
+                            children: [
+                              IconButton(
+                                onPressed: () => _showEditProfileModal(context, user),
+                                tooltip: 'Editar datos personales',
+                                icon: const Icon(Icons.edit_note_rounded, color: AppColors.primaryBlue, size: 26),
                               ),
-                            ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryBlue.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Text(
+                                  (user?.rol ?? 'PACIENTE').toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primaryBlue,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),

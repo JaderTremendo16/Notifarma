@@ -3,11 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
 import 'package:notifarma_app/core/providers/theme_provider.dart';
+import 'package:notifarma_app/core/services/notification_service.dart';
+import 'package:notifarma_app/core/utils/audio_feedback.dart';
 import 'package:notifarma_app/core/utils/date_formatter.dart';
 import 'package:notifarma_app/features/health/providers/health_provider.dart';
 import 'package:notifarma_app/features/medications/providers/medication_provider.dart';
 import 'package:notifarma_app/shared/widgets/senior_header.dart';
-import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
 
 class UnifiedHomeDashboardScreen extends StatefulWidget {
   final Function(int) onNavigateTab;
@@ -380,9 +381,10 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       );
                       if (!mounted) return;
                       if (success) {
+                        AudioFeedback.playSuccess();
                         if (ctx.mounted) Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Medicamento guardado en el pastillero 🎉')),
+                          const SnackBar(content: Text('Medicamento guardado en el pastillero')),
                         );
                       }
                     },
@@ -396,6 +398,241 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
         );
       },
     );
+  }
+
+  void _showCrearCitaModal(BuildContext context) {
+    final especialidadCtrl = TextEditingController();
+    final medicoCtrl = TextEditingController();
+    final lugarCtrl = TextEditingController();
+    final direccionCtrl = TextEditingController();
+    final notasCtrl = TextEditingController();
+
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final dateStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+            final timeStr = selectedTime.format(context);
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 24,
+                right: 24,
+                top: 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_month_rounded, color: AppColors.morningBlue, size: 26),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Recordatorio de Cita',
+                              style: Theme.of(ctx).textTheme.headlineMedium,
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: especialidadCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: 'Especialidad médica (ej. Odontología, Cardiología)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: medicoCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: const InputDecoration(
+                        labelText: 'Nombre del Médico (opcional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: lugarCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: 'Centro Médico / Hospital (ej. Clínica Central)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: direccionCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        labelText: 'Dirección o consultorio (ej. Calle 10 # 5-20)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              final pickedDate = await showDatePicker(
+                                context: modalCtx,
+                                initialDate: selectedDate,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                              );
+                              if (pickedDate != null) {
+                                setModalState(() => selectedDate = pickedDate);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Fecha',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.event_rounded, color: AppColors.morningBlue),
+                              ),
+                              child: Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () async {
+                              final pickedTime = await showTimePicker(
+                                context: modalCtx,
+                                initialTime: selectedTime,
+                                builder: (context, child) {
+                                  return MediaQuery(
+                                    data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                                    child: child!,
+                                  );
+                                },
+                              );
+                              if (pickedTime != null) {
+                                setModalState(() => selectedTime = pickedTime);
+                              }
+                            },
+                            child: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Hora',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.morningBlue),
+                              ),
+                              child: Text(timeStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notasCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Indicaciones o notas (ej. Llevar exámenes de sangre)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (especialidadCtrl.text.trim().isEmpty) return;
+
+                        // Validación: No permitir citas en fechas u horas pasadas
+                        final fechaHoraCita = DateTime(
+                          selectedDate.year,
+                          selectedDate.month,
+                          selectedDate.day,
+                          selectedTime.hour,
+                          selectedTime.minute,
+                        );
+                        if (fechaHoraCita.isBefore(DateTime.now())) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('La fecha y hora de la cita no puede ser en el pasado.'),
+                              backgroundColor: AppColors.sosRed,
+                            ),
+                          );
+                          return;
+                        }
+
+                        final h = selectedTime.hour.toString().padLeft(2, '0');
+                        final m = selectedTime.minute.toString().padLeft(2, '0');
+                        final fechaHoraIso = '${dateStr}T$h:$m:00';
+
+                        final messenger = ScaffoldMessenger.of(context);
+                        final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+                        final ok = await healthProvider.createAppointment(
+                          especialidad: especialidadCtrl.text.trim(),
+                          medico: medicoCtrl.text.trim().isNotEmpty ? medicoCtrl.text.trim() : null,
+                          lugar: lugarCtrl.text.trim().isNotEmpty ? lugarCtrl.text.trim() : null,
+                          direccion: direccionCtrl.text.trim().isNotEmpty ? direccionCtrl.text.trim() : null,
+                          fechaHoraIso: fechaHoraIso,
+                          notas: notasCtrl.text.trim().isNotEmpty ? notasCtrl.text.trim() : null,
+                        );
+                        if (!mounted) return;
+                        if (ok) {
+                          AudioFeedback.playSuccess();
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Recordatorio de cita médica guardado correctamente'),
+                              backgroundColor: AppColors.morningBlue,
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.morningBlue,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text('GUARDAR RECORDATORIO', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  bool _puedeConfirmarCita(String fechaHoraStr) {
+    try {
+      final fechaCita = DateTime.parse(fechaHoraStr).toLocal();
+      final ahora = DateTime.now();
+      // Se permite confirmar a partir de 2.5 horas antes de la cita
+      final diferenciaMinutos = fechaCita.difference(ahora).inMinutes;
+      return diferenciaMinutos <= 150;
+    } catch (_) {
+      return true;
+    }
   }
 
   @override
@@ -455,13 +692,13 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              _buildFilterChip('Todos', '📋 Todos', medProvider, isDark),
+                              _buildFilterChip('Todos', 'Todos', medProvider, isDark),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Mañana', '🌅 Mañana', medProvider, isDark),
+                              _buildFilterChip('Mañana', 'Mañana', medProvider, isDark),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Tarde', '☀️ Tarde', medProvider, isDark),
+                              _buildFilterChip('Tarde', 'Tarde', medProvider, isDark),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Noche', '🌙 Noche', medProvider, isDark),
+                              _buildFilterChip('Noche', 'Noche', medProvider, isDark),
                             ],
                           ),
                         ),
@@ -507,6 +744,11 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               return _buildMedicationListItem(m, medProvider, isDark);
                             },
                           ),
+
+                        const SizedBox(height: 24),
+
+                        // SECCIÓN DE CITAS MÉDICAS PRÓXIMAS
+                        _buildAppointmentsSection(context, isDark),
                       ],
                     ),
                   ),
@@ -516,10 +758,372 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     );
   }
 
-  bool _doseConfirmed = false;
+  Widget _buildAppointmentsSection(BuildContext context, bool isDark) {
+    final healthProvider = Provider.of<HealthProvider>(context);
+    final appointments = healthProvider.appointments.where((a) => a.activo).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.calendar_month_rounded, color: AppColors.morningBlue, size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  'PRÓXIMAS CITAS MÉDICAS',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.morningBlue, size: 24),
+                  tooltip: 'Agregar Recordatorio de Cita',
+                  onPressed: () => _showCrearCitaModal(context),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20, color: AppColors.morningBlue),
+                  tooltip: 'Actualizar',
+                  onPressed: () => healthProvider.fetchHealthData(),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (appointments.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(18),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.cardDark : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.morningBlue.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.event_available_rounded, color: AppColors.morningBlue, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'No tienes citas médicas programadas por ahora.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: appointments.length,
+            separatorBuilder: (ctx, i) => const SizedBox(height: 10),
+            itemBuilder: (ctx, idx) {
+              final cita = appointments[idx];
+              String fechaHoraFormateada = cita.fechaHora;
+              try {
+                final dt = DateTime.parse(cita.fechaHora).toLocal();
+                final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+                final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+                final min = dt.minute.toString().padLeft(2, '0');
+                final dia = dt.day.toString().padLeft(2, '0');
+                final mes = dt.month.toString().padLeft(2, '0');
+                fechaHoraFormateada = '$dia/$mes/${dt.year} • $hour:$min $ampm';
+              } catch (_) {}
+
+              return Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.cardDark : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.morningBlue.withValues(alpha: 0.4), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.morningBlue.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.medical_services_rounded, color: AppColors.morningBlue, size: 20),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              cita.especialidad,
+                              style: GoogleFonts.outfit(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: cita.estado == 'asistida'
+                                ? AppColors.successGreen.withValues(alpha: 0.15)
+                                : cita.estado == 'no_asistida'
+                                    ? AppColors.sosRed.withValues(alpha: 0.15)
+                                    : cita.estado == 'sin_confirmar'
+                                        ? AppColors.afternoonOrange.withValues(alpha: 0.15)
+                                        : AppColors.morningBlue.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            cita.estado == 'asistida'
+                                ? 'Asistí ✓'
+                                : cita.estado == 'no_asistida'
+                                    ? 'No asistí'
+                                    : cita.estado == 'sin_confirmar'
+                                        ? 'Sin confirmar'
+                                        : 'Programada',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: cita.estado == 'asistida'
+                                  ? AppColors.successGreen
+                                  : cita.estado == 'no_asistida'
+                                      ? AppColors.sosRed
+                                      : cita.estado == 'sin_confirmar'
+                                          ? AppColors.afternoonOrange
+                                          : AppColors.morningBlue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(Icons.access_time_rounded, size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: 6),
+                        Text(
+                          fechaHoraFormateada,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (cita.lugar != null && cita.lugar!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.local_hospital_rounded, size: 16, color: AppColors.morningBlue),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Lugar: ${cita.lugar}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (cita.direccion != null && cita.direccion!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on_rounded, size: 16, color: AppColors.sosRed),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Dirección: ${cita.direccion}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (cita.medico != null && cita.medico!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(Icons.person_pin_rounded, size: 16, color: AppColors.primaryBlue),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Médico: ${cita.medico}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (cita.notas != null && cita.notas!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.primaryBlue),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Indicaciones: ${cita.notas}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    // BOTONES DE ASISTENCIA A LA CITA MÉDICA
+                    if ((cita.estado == 'programada' || cita.estado == 'sin_confirmar') && _puedeConfirmarCita(cita.fechaHora))
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                AudioFeedback.playConfirmation();
+                                await healthProvider.updateAppointmentStatus(cita.id, 'asistida');
+                                // Cancelar notificación local para que deje de sonar/aparecer
+                                await NotificationService().cancelarNotificacionLocal(cita.id.hashCode);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('¡Excelente! Marcaste tu asistencia a la cita.'),
+                                    backgroundColor: AppColors.successGreen,
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.successGreen,
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 18),
+                              label: const Text(
+                                'ASISTÍ',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                AudioFeedback.playSuccess();
+                                await healthProvider.updateAppointmentStatus(cita.id, 'no_asistida');
+                                await NotificationService().cancelarNotificacionLocal(cita.id.hashCode);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Cita médica marcada como no asistida.'),
+                                  ),
+                                );
+                              },
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: BorderSide(
+                                  color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                                ),
+                              ),
+                              icon: Icon(
+                                Icons.close_rounded,
+                                size: 18,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                              label: Text(
+                                'NO ASISTÍ',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else if ((cita.estado == 'programada' || cita.estado == 'sin_confirmar') && !_puedeConfirmarCita(cita.fechaHora))
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.lock_clock_rounded, size: 16, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Se habilitará para confirmar el día de la cita.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  final Set<String> _submittingDoses = {};
 
   Widget _buildHeroCard(Map<String, dynamic>? proximo, MedicationProvider provider, bool isDark) {
-    // Si no hay medicamentos en el pastillero
     if (provider.medications.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -568,253 +1172,282 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
       );
     }
 
-    final title = proximo != null ? proximo['nombre'] : provider.medications.first.nombre;
-    final dosis = proximo != null ? (proximo['dosis'] ?? '1 tableta') : provider.medications.first.dosis;
-    final horaFormateada = proximo != null ? (proximo['hora_formateada'] as String?) : null;
-    final infoHorario = horaFormateada != null ? '$horaFormateada • $dosis' : dosis;
-    final medId = proximo != null ? proximo['medicamento_id'] : provider.medications.first.id;
+    // LISTAR TODAS LAS DOSIS PENDIENTES O PROGRAMADAS PARA EVITAR SUPERPOSICIÓN
+    final medications = provider.medications;
 
-    final isAlreadyTaken = medId != null && provider.isDoseTakenRecently(medId.toString());
-
-    if (_doseConfirmed || isAlreadyTaken) {
-      final lastToma = medId != null ? provider.getUltimaToma(medId.toString()) : null;
-      String lastHoraStr = 'hoy';
-      if (lastToma?.fechaHoraConfirmacion != null) {
-        try {
-          final dt = DateTime.parse(lastToma!.fechaHoraConfirmacion!).toLocal();
-          final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-          final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-          final min = dt.minute.toString().padLeft(2, '0');
-          lastHoraStr = '$hour:$min $ampm';
-        } catch (_) {}
-      }
-
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOutBack,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.6) : const Color(0xFFF0FDF4),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.successGreen, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.successGreen.withValues(alpha: 0.18),
-              blurRadius: 18,
-              offset: const Offset(0, 4),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'RECORDATORIOS DE TOMA',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              letterSpacing: 1.1,
             ),
-          ],
+          ),
         ),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: const BoxDecoration(
-                color: AppColors.successGreen,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.check_rounded, color: Colors.white, size: 36),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '¡Dosis de este Turno Tomada!',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Confirmada a las $lastHoraStr para $title.\nEl botón se reactivará automáticamente en la próxima toma.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: isDark ? const Color(0xFFA7F3D0) : const Color(0xFF15803D),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.successGreen.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.lock_clock_rounded, size: 18, color: AppColors.successGreen),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Bloqueo activo contra tomas duplicadas',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: medications.length,
+          separatorBuilder: (ctx, i) => const SizedBox(height: 12),
+          itemBuilder: (ctx, idx) {
+            final med = medications[idx];
+            final medId = med.id.toString();
+            final isTaken = provider.isDoseTakenRecently(medId, frecuenciaHoras: med.frecuenciaHoras);
+            final lastToma = provider.getUltimaToma(medId);
+
+            String lastHoraStr = 'hoy';
+            if (lastToma?.fechaHoraConfirmacion != null) {
+              try {
+                final dt = DateTime.parse(lastToma!.fechaHoraConfirmacion!).toLocal();
+                final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+                final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+                final min = dt.minute.toString().padLeft(2, '0');
+                lastHoraStr = '$hour:$min $ampm';
+              } catch (_) {}
+            }
+
+            final nowHour = DateTime.now().hour;
+            final Color scheduleColor = (nowHour >= 5 && nowHour < 12)
+                ? AppColors.morningBlue
+                : (nowHour >= 12 && nowHour < 18)
+                    ? AppColors.afternoonOrange
+                    : AppColors.nightIndigo;
+
+            final isOmitido = lastToma?.estado.toLowerCase() == 'omitido' && provider.isDoseTakenRecently(medId, frecuenciaHoras: med.frecuenciaHoras);
+
+            if (isTaken || isOmitido) {
+              final isSuccess = isTaken;
+              final Color badgeColor = isSuccess ? AppColors.successGreen : AppColors.sosRed;
+              final Color bgContainer = isSuccess
+                  ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFF0FDF4))
+                  : (isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.4) : const Color(0xFFFEF2F2));
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                decoration: BoxDecoration(
+                  color: bgContainer,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: badgeColor, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: badgeColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isSuccess ? Icons.check_rounded : Icons.close_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
                     ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            med.nombre,
+                            style: GoogleFonts.outfit(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: isSuccess
+                                  ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534))
+                                  : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B)),
+                            ),
+                          ),
+                          Text(
+                            isSuccess
+                                ? 'Dosis tomada a las $lastHoraStr • Registrada'
+                                : 'Dosis omitida • Registrada para el turno actual',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isSuccess
+                                  ? (isDark ? const Color(0xFFA7F3D0) : const Color(0xFF15803D))
+                                  : (isDark ? const Color(0xFFFECACA) : const Color(0xFFB91C1C)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: scheduleColor.withValues(alpha: 0.6), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: scheduleColor.withValues(alpha: isDark ? 0.08 : 0.06),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Determinar color dinámico según la hora del día (Mañana / Tarde / Noche)
-    final nowHour = DateTime.now().hour;
-    final Color scheduleColor = (nowHour >= 5 && nowHour < 12)
-        ? AppColors.morningBlue // 🌅 Mañana (Azul Cielo Fresco)
-        : (nowHour >= 12 && nowHour < 18)
-            ? AppColors.afternoonOrange // ☀️ Tarde (Ámbar / Naranja Cálido)
-            : AppColors.nightIndigo; // 🌙 Noche (Índigo Noche Relajante)
-
-    final String scheduleLabel = (nowHour >= 5 && nowHour < 12)
-        ? '🌅 DOSIS DE LA MAÑANA'
-        : (nowHour >= 12 && nowHour < 18)
-            ? '☀️ DOSIS DE LA TARDE'
-            : '🌙 DOSIS DE LA NOCHE';
-
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.cardDark : Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: scheduleColor.withValues(alpha: 0.6), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: scheduleColor.withValues(alpha: isDark ? 0.1 : 0.12),
-            blurRadius: 20,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: scheduleColor.withValues(alpha: isDark ? 0.2 : 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  scheduleLabel,
-                  style: TextStyle(
-                    color: scheduleColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.8,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          med.nombre,
+                          style: GoogleFonts.outfit(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheduleColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          DateFormatter.formatTimeString(med.horaInicio),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: scheduleColor,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: scheduleColor,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.access_time_filled_rounded, color: Colors.white, size: 24),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          Text(
-            title,
-            style: GoogleFonts.outfit(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          Text(
-            infoHorario,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          // Action Button: ¡YA LA TOMÉ! con color dinámico de turno
-          ElevatedButton.icon(
-            onPressed: () async {
-              if (medId != null) {
-                final ok = await provider.registrarToma(medId.toString(), 'tomado');
-                if (!mounted) return;
-                if (ok) {
-                  setState(() {
-                    _doseConfirmed = true;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('¡Excelente! Toma registrada y protegida contra duplicados 🎉'),
-                      backgroundColor: AppColors.successGreen,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${med.dosis ?? "1 dosis"} • Cada ${med.frecuenciaHoras} hrs • Stock: ${med.stockActual}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
                     ),
-                  );
-                }
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Agrega un medicamento al pastillero primero')),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: scheduleColor,
-              minimumSize: const Size(double.infinity, 56),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              elevation: 2,
-            ),
-            icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 26),
-            label: const Text(
-              '¡YA LA TOMÉ!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 0.8),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Secondary button: Remind in 15 min
-          OutlinedButton.icon(
-            onPressed: () {
-              InAppNotificationService().show(
-                title: '⏰ Recordatorio Pospuesto',
-                message: 'Te avisaremos de nuevo en 15 minutos para tomar $title ($dosis).',
-                type: TopNotificationType.medicationReminder,
-                actionLabel: 'ENTENDIDO',
-                onAction: () {},
-                duration: const Duration(seconds: 5),
-              );
-            },
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 46),
-              side: BorderSide(color: isDark ? AppColors.borderDark : AppColors.borderLight, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            icon: Icon(
-              Icons.history_toggle_off_rounded,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-              size: 20,
-            ),
-            label: Text(
-              'Recordarme en 15 minutos',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  ),
+                  if (med.indicaciones != null && med.indicaciones!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Indicaciones: ${med.indicaciones!}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: AppColors.morningBlue,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (_submittingDoses.contains(medId) || med.stockActual <= 0)
+                              ? null
+                              : () async {
+                                  setState(() => _submittingDoses.add(medId));
+                                  AudioFeedback.playConfirmation();
+                                  final ok = await provider.registrarToma(medId, 'tomado');
+                                  if (!mounted) return;
+                                  setState(() => _submittingDoses.remove(medId));
+                                  if (ok) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Dosis confirmada: ${med.nombre}'),
+                                        backgroundColor: AppColors.successGreen,
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(provider.errorMessage ?? 'No se pudo registrar la toma.'),
+                                        backgroundColor: AppColors.sosRed,
+                                      ),
+                                    );
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: med.stockActual <= 0 ? Colors.grey : AppColors.successGreen,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          icon: _submittingDoses.contains(medId)
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                )
+                              : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                          label: Text(
+                            _submittingDoses.contains(medId)
+                                ? 'REGISTRANDO...'
+                                : (med.stockActual <= 0 ? 'SIN STOCK' : 'YA LA TOMÉ'),
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        onPressed: _submittingDoses.contains(medId)
+                            ? null
+                            : () async {
+                                setState(() => _submittingDoses.add(medId));
+                                AudioFeedback.playSuccess();
+                                final ok = await provider.registrarToma(medId, 'omitido');
+                                if (!mounted) return;
+                                setState(() => _submittingDoses.remove(medId));
+                                if (ok) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Dosis marcada como no tomada: ${med.nombre}'),
+                                      backgroundColor: isDark ? AppColors.cardDark : Colors.grey[700],
+                                    ),
+                                  );
+                                }
+                              },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          side: BorderSide(
+                            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                          ),
+                        ),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                        ),
+                        label: Text(
+                          'NO LA TOMÉ',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
-      ),
+            );
+          },
+        ),
+      ],
     );
   }
 

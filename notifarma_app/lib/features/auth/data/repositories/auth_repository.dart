@@ -68,4 +68,20 @@ class AuthRepository {
     final response = await _apiClient.post('/auth/cancelar-codigo');
     return response as Map<String, dynamic>;
   }
+
+  Future<UserModel> updateProfile({
+    String? nombres,
+    int? edad,
+    String? contactoEmergenciaNombre,
+    String? contactoEmergenciaTelefono,
+  }) async {
+    final body = <String, dynamic>{};
+    if (nombres != null) body['nombres'] = nombres;
+    if (edad != null) body['edad'] = edad;
+    if (contactoEmergenciaNombre != null) body['contacto_emergencia_nombre'] = contactoEmergenciaNombre;
+    if (contactoEmergenciaTelefono != null) body['contacto_emergencia_telefono'] = contactoEmergenciaTelefono;
+
+    final response = await _apiClient.put('/auth/me', body: body);
+    return UserModel.fromJson(response as Map<String, dynamic>);
+  }
 }
