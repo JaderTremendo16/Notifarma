@@ -164,14 +164,15 @@ class _UnifiedHomeDashboardScreenState
                 right: 24,
                 top: 24,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Editar Medicamento',
-                    style: Theme.of(ctx).textTheme.headlineMedium,
-                  ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Editar Medicamento',
+                      style: Theme.of(ctx).textTheme.headlineMedium,
+                    ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nombreCtrl,
@@ -334,7 +335,8 @@ class _UnifiedHomeDashboardScreenState
                   ),
                 ],
               ),
-            );
+            ),
+          );
           },
         );
       },
@@ -451,14 +453,15 @@ class _UnifiedHomeDashboardScreenState
                 right: 24,
                 top: 24,
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Nuevo Medicamento',
-                    style: Theme.of(ctx).textTheme.headlineMedium,
-                  ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Nuevo Medicamento',
+                      style: Theme.of(ctx).textTheme.headlineMedium,
+                    ),
                   const SizedBox(height: 16),
                   TextField(
                     controller: nombreCtrl,
@@ -619,7 +622,8 @@ class _UnifiedHomeDashboardScreenState
                   ),
                 ],
               ),
-            );
+            ),
+          );
           },
         );
       },
