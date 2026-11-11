@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from sqlalchemy import or_
 
 from app.database import get_db
 import os
@@ -19,6 +21,7 @@ from app.models.notification_model import Notificacion, EstadoNotificacion, Tipo
 from app.services.scheduler_service import sincronizar_notificaciones
 
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -40,11 +43,13 @@ def listar_pendientes(request: Request, db: Session = Depends(get_db)):
     Filtra por destinatario_id según el header X-User-Id inyectado por el API Gateway.
     """
     destinatario_id = _get_paciente_id(request)
+    ahora_colombia = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
     notificaciones = (
         db.query(Notificacion)
         .filter(
             Notificacion.destinatario_id == destinatario_id,
-            Notificacion.estado == EstadoNotificacion.pendiente
+            Notificacion.estado == EstadoNotificacion.pendiente,
+            Notificacion.fecha_hora_programada <= ahora_colombia,
         )
         .order_by(Notificacion.fecha_hora_programada.asc())
         .all()
@@ -99,6 +104,47 @@ def cerrar_notificaciones_por_referencia(datos: dict, db: Session = Depends(get_
 
     db.commit()
     return {"cerradas": len(pendientes)}
+
+
+@router.post("/internal/cerrar-recordatorios-toma")
+def cerrar_recordatorios_toma(datos: dict, db: Session = Depends(get_db)):
+    referencia_id = datos.get("referencia_id")
+    fecha_programada = datos.get("fecha_hora_programada")
+    if not referencia_id or not fecha_programada:
+        raise HTTPException(
+            status_code=400,
+            detail="referencia_id y fecha_hora_programada son requeridos",
+        )
+
+    try:
+        id_medicamento = UUID(referencia_id)
+        hora_programada = datetime.fromisoformat(fecha_programada)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=400, detail="Datos de dosis no válidos") from error
+
+    inicio = hora_programada - timedelta(minutes=5)
+    fin = hora_programada + timedelta(minutes=5)
+    pendientes = db.query(Notificacion).filter(
+        Notificacion.referencia_id == id_medicamento,
+        Notificacion.tipo == TipoNotificacion.medicamento,
+        Notificacion.es_alerta_cuidador == False,
+        Notificacion.estado == EstadoNotificacion.pendiente,
+        Notificacion.fecha_hora_programada >= inicio,
+        Notificacion.fecha_hora_programada <= fin,
+        or_(
+            Notificacion.mensaje.like("En 5 minutos:%"),
+            Notificacion.mensaje.like("Hora de tomar tu medicamento:%"),
+            Notificacion.mensaje.like("Aún no confirmas la toma de%"),
+        ),
+    ).all()
+
+    for notificacion in pendientes:
+        notificacion.estado = EstadoNotificacion.confirmada
+
+    db.commit()
+    return {"cerradas": len(pendientes)}
+
+
 def trigger_sincronizacion_manual(db: Session = Depends(get_db)):
     """
     Endpoint de utilidad interna para disparar la sincronización inmediatamente
@@ -115,6 +161,7 @@ def crear_alerta_stock(datos: AlertaStockRequest, db: Session = Depends(get_db))
     Se dispara cuando el stock_actual de un medicamento es <= stock_minimo_alerta.
     """
     ahora = datetime.utcnow()
+    ahora_colombia = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
     creadas = []
 
     # 1. Alerta para el PACIENTE
@@ -134,7 +181,7 @@ def crear_alerta_stock(datos: AlertaStockRequest, db: Session = Depends(get_db))
             tipo=TipoNotificacion.medicamento,
             referencia_id=datos.medicamento_id,
             mensaje=f"Atención: Te quedan solo {datos.stock_actual} dosis de {datos.medicamento_nombre}. Recuerda surtir tu receta.",
-            fecha_hora_programada=ahora,
+            fecha_hora_programada=ahora_colombia,
             estado=EstadoNotificacion.pendiente,
             intentos=1,
             fecha_hora_ultimo_intento=ahora
@@ -165,7 +212,7 @@ def crear_alerta_stock(datos: AlertaStockRequest, db: Session = Depends(get_db))
                             tipo=TipoNotificacion.medicamento,
                             referencia_id=datos.medicamento_id,
                             mensaje=f"Alerta de Stock: A tu familiar le quedan solo {datos.stock_actual} dosis de {datos.medicamento_nombre}. Recuerda surtir el medicamento.",
-                            fecha_hora_programada=ahora,
+                            fecha_hora_programada=ahora_colombia,
                             estado=EstadoNotificacion.pendiente,
                             intentos=1,
                             fecha_hora_ultimo_intento=ahora
@@ -191,14 +238,15 @@ def alerta_personalizada(datos: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="destinatario_id es requerido")
 
     ahora = datetime.utcnow()
+    ahora_colombia = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
     nueva = Notificacion(
         paciente_id=UUID(destinatario_id),
         destinatario_id=UUID(destinatario_id),
         es_alerta_cuidador=False,
         tipo=TipoNotificacion.cita,
-        referencia_id=uuid.uuid4(),
+        referencia_id=UUID(datos["referencia_id"]) if datos.get("referencia_id") else uuid.uuid4(),
         mensaje=datos.get("mensaje", "Tienes una nueva notificación de NotiFarma"),
-        fecha_hora_programada=ahora,
+        fecha_hora_programada=ahora_colombia,
         estado=EstadoNotificacion.pendiente,
         intentos=1,
         fecha_hora_ultimo_intento=ahora,
@@ -206,4 +254,3 @@ def alerta_personalizada(datos: dict, db: Session = Depends(get_db)):
     db.add(nueva)
     db.commit()
     return {"message": "Notificación personalizada creada"}
-

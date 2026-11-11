@@ -1,6 +1,7 @@
 import io
+import logging
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time, timezone
 from zoneinfo import ZoneInfo
 from typing import List, Optional
 from uuid import UUID
@@ -30,6 +31,7 @@ NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notific
 HEALTH_SERVICE_URL = os.getenv("HEALTH_SERVICE_URL", "http://health-service:8003")
 
 router = APIRouter(prefix="/medications", tags=["medications"])
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
@@ -83,7 +85,11 @@ def proximo_medicamento(request: Request, db: Session = Depends(get_db)):
     paciente_id = _get_paciente_id(request)
     medicamentos = (
         db.query(Medicamento)
-        .filter(Medicamento.paciente_id == paciente_id, Medicamento.activo == True)
+        .filter(
+            Medicamento.paciente_id == paciente_id,
+            Medicamento.activo == True,
+            Medicamento.stock_actual > 0,
+        )
         .all()
     )
 
@@ -94,10 +100,23 @@ def proximo_medicamento(request: Request, db: Session = Depends(get_db)):
     mejor_tiempo = None
 
     for med in medicamentos:
-        proxima = calcular_proxima_toma(med.hora_inicio, med.frecuencia_horas)
+        proxima = calcular_proxima_toma(
+            med.hora_inicio,
+            med.frecuencia_horas,
+            med.fecha_inicio,
+            med.fecha_fin,
+        )
+        if proxima is None:
+            continue
         if mejor_tiempo is None or proxima < mejor_tiempo:
             mejor_tiempo = proxima
             mejor        = med
+
+    if mejor is None or mejor_tiempo is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay próximas tomas disponibles para los tratamientos activos.",
+        )
 
     hora_str = mejor_tiempo.strftime("%I:%M %p")
 
@@ -265,8 +284,15 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
     alertas = [m for m in medicamentos if m.stock_actual <= m.stock_minimo_alerta]
 
     # 3. Tomas del día de hoy
-    hoy_inicio = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    hoy_fin = hoy_inicio + timedelta(days=1)
+    hoy_colombia = datetime.now(ZoneInfo("America/Bogota")).date()
+    inicio_colombia = datetime.combine(hoy_colombia, time.min).replace(
+        tzinfo=ZoneInfo("America/Bogota")
+    )
+    fin_colombia = datetime.combine(
+        hoy_colombia + timedelta(days=1), time.min
+    ).replace(tzinfo=ZoneInfo("America/Bogota"))
+    hoy_inicio = inicio_colombia.astimezone(timezone.utc).replace(tzinfo=None)
+    hoy_fin = fin_colombia.astimezone(timezone.utc).replace(tzinfo=None)
     tomas_raw = (
         db.query(Toma)
         .filter(
@@ -300,7 +326,16 @@ def resumen_paciente_para_cuidador(request: Request, db: Session = Depends(get_d
     mejor = None
     mejor_tiempo = None
     for med in medicamentos:
-        proxima = calcular_proxima_toma(med.hora_inicio, med.frecuencia_horas)
+        if med.stock_actual <= 0:
+            continue
+        proxima = calcular_proxima_toma(
+            med.hora_inicio,
+            med.frecuencia_horas,
+            med.fecha_inicio,
+            med.fecha_fin,
+        )
+        if proxima is None:
+            continue
         if mejor_tiempo is None or proxima < mejor_tiempo:
             mejor_tiempo = proxima
             mejor = med
@@ -368,6 +403,8 @@ def descargar_reporte_adherencia_pdf(
     def _formatear_fecha_local(dt: Optional[datetime]) -> str:
         if not dt:
             return "-"
+        if isinstance(dt, str):
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
         if tz_local:
             # Si el datetime en DB es ingenuo (naive), asumimos UTC
             if dt.tzinfo is None:
@@ -402,8 +439,7 @@ def descargar_reporte_adherencia_pdf(
     )
     med_map = {str(m.id): m.nombre for m in medicamentos}
 
-    # Consultar síntomas y bienestar desde health-service
-    sintomas_reportados = []
+    # Consultar estados de ánimo desde health-service
     animos_reportados = []
     try:
         with httpx.Client(timeout=3.0) as client:
@@ -413,10 +449,9 @@ def descargar_reporte_adherencia_pdf(
             )
             if res_health.status_code == 200:
                 h_data = res_health.json()
-                sintomas_reportados = h_data.get("sintomas", [])
                 animos_reportados = h_data.get("animos", [])
-    except Exception:
-        pass
+    except httpx.HTTPError as error:
+        logger.warning("No se pudo consultar el historial de ánimo para el reporte: %s", error)
 
     total_tomas = len(tomas)
     total_tomadas = sum(1 for t in tomas if t.estado == EstadoToma.tomado)
@@ -471,12 +506,16 @@ def descargar_reporte_adherencia_pdf(
     )
 
     # Encabezado
-    story.append(Paragraph("💊 NotiFarma — Reporte Clínico de Adherencia Terapéutica", titulo_style))
-    story.append(Paragraph(f"Período evaluado: Últimos {dias} días | Fecha de emisión ({zona_horaria_str}): {fecha_emision_str}", subtitulo_style))
+    story.append(Paragraph("NotiFarma - Reporte de adherencia al tratamiento", titulo_style))
+    story.append(Paragraph(
+        f"Período evaluado: últimos {dias} días | Emisión ({zona_horaria_str}): "
+        f"{fecha_emision_str}<br/>Resumen informativo basado en los registros de la aplicación; no reemplaza una valoración profesional.",
+        subtitulo_style,
+    ))
     story.append(Spacer(1, 10))
 
     # Resumen Ejecutivo
-    story.append(Paragraph("📊 Resumen General de Cumplimiento", seccion_style))
+    story.append(Paragraph("Resumen de cumplimiento", seccion_style))
     nivel_cumplimiento = "EXCELENTE" if porcentaje_adherencia >= 85 else ("ACEPTABLE" if porcentaje_adherencia >= 70 else "EN RIESGO")
     color_adherencia = colors.HexColor("#2E7D32") if porcentaje_adherencia >= 85 else (colors.HexColor("#F57C00") if porcentaje_adherencia >= 70 else colors.HexColor("#C62828"))
 
@@ -503,28 +542,39 @@ def descargar_reporte_adherencia_pdf(
     story.append(Spacer(1, 15))
 
     # Medicamentos Activos y Stock
-    story.append(Paragraph("📋 Tratamiento Farmacológico Actual y Stock", seccion_style))
-    med_table_data = [["Medicamento", "Dosis", "Frecuencia", "Hora Inicio", "Stock Actual", "Estado Stock"]]
+    from reportlab.platypus import Paragraph
+    from xml.sax.saxutils import escape
+
+    story.append(Paragraph("Tratamiento actual e indicaciones", seccion_style))
+    celda_style = ParagraphStyle(
+        "CeldaTratamiento",
+        parent=styles["BodyText"],
+        fontSize=7,
+        leading=8,
+    )
+    med_table_data = [["Medicamento", "Dosis", "Frecuencia", "Hora", "Stock", "Estado", "Indicaciones"]]
     for m in medicamentos:
         if m.activo:
             alerta_txt = "ALERTA BAJO" if m.stock_actual <= m.stock_minimo_alerta else "OK"
             med_table_data.append([
-                m.nombre,
-                m.dosis or "N/A",
+                Paragraph(escape(m.nombre), celda_style),
+                Paragraph(escape(m.dosis or "N/A"), celda_style),
                 f"Cada {m.frecuencia_horas}h",
                 str(m.hora_inicio),
                 str(m.stock_actual),
                 alerta_txt,
+                Paragraph(escape(m.indicaciones or "-"), celda_style),
             ])
     if len(med_table_data) == 1:
-        med_table_data.append(["Sin medicamentos registrados", "-", "-", "-", "-", "-"])
+        med_table_data.append(["Sin medicamentos registrados", "-", "-", "-", "-", "-", "-"])
 
-    t_meds = Table(med_table_data, colWidths=[130, 75, 75, 75, 75, 70])
+    t_meds = Table(med_table_data, colWidths=[105, 55, 55, 48, 48, 58, 145])
     t_meds.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1976D2")),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CFD8DC")),
         ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
@@ -534,7 +584,7 @@ def descargar_reporte_adherencia_pdf(
     story.append(Spacer(1, 15))
 
     # Últimas Tomas Registradas
-    story.append(Paragraph(f"🗓️ Detalle de Tomas Recientes (Muestra hasta 25 eventos)", seccion_style))
+    story.append(Paragraph("Tomas recientes (hasta 25 registros)", seccion_style))
     tomas_table_data = [["Medicamento", "Fecha y Hora Programada", "Estado", "Confirmado En"]]
     for t in tomas[:25]:
         nom = med_map.get(str(t.medicamento_id), "Medicamento")
@@ -562,19 +612,16 @@ def descargar_reporte_adherencia_pdf(
     story.append(t_tomas)
     story.append(Spacer(1, 15))
 
-    # Sección de Síntomas Reportados y Bienestar (Health Service)
-    story.append(Paragraph("🩺 Registro de Síntomas y Bienestar del Paciente", seccion_style))
-    if sintomas_reportados:
-        sintomas_table_data = [["Fecha y Hora", "Síntoma Reportado", "Intensidad", "Observaciones / Dictado"]]
-        for s in sintomas_reportados[:15]:
-            nombre_sintoma = s.get("sintoma_otro") or "Síntoma general"
-            fecha_str = s.get("fecha_hora", "")[:16].replace("T", " ")
-            intensidad = (s.get("intensidad") or "-").capitalize()
-            observacion = s.get("observacion") or "-"
-            sintomas_table_data.append([fecha_str, nombre_sintoma, intensidad, observacion])
-        
-        t_sintomas = Table(sintomas_table_data, colWidths=[110, 130, 80, 180])
-        t_sintomas.setStyle(TableStyle([
+    story.append(Paragraph("Estados de ánimo registrados", seccion_style))
+    if animos_reportados:
+        animos_table_data = [["Fecha y hora", "Estado registrado"]]
+        for animo in animos_reportados[:25]:
+            fecha = _formatear_fecha_local(animo.get("fecha_hora"))
+            valor = animo.get("animo") or "-"
+            animos_table_data.append([fecha, str(valor).replace("_", " ").capitalize()])
+
+        t_animos = Table(animos_table_data, colWidths=[180, 352])
+        t_animos.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#00695C")),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -584,9 +631,9 @@ def descargar_reporte_adherencia_pdf(
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
         ]))
-        story.append(t_sintomas)
+        story.append(t_animos)
     else:
-        story.append(Paragraph("No se registraron síntomas adversos o malestar durante este período evaluado. El paciente ha reportado bienestar general.", subtitulo_style))
+        story.append(Paragraph("No hay estados de ánimo registrados durante este período.", subtitulo_style))
 
     # Construir PDF
     doc.build(story)
@@ -735,59 +782,80 @@ def registrar_toma(
 ):
     """
     Registra una toma (tomado / omitido / pendiente) para un medicamento.
-    Si no se envía fecha_hora_programada se usa el momento actual UTC.
+    La dosis se asocia a la ocurrencia más reciente del horario configurado.
     Si el estado es 'tomado':
       - Registra fecha_hora_confirmacion automáticamente.
       - Descuenta 1 unidad de stock_actual (si es > 0).
       - Si stock_actual <= stock_minimo_alerta, dispara alerta a Notification Service
         para notificar tanto al paciente como a su cuidador.
     """
-    paciente_id = _get_paciente_id(request)
+    paciente_id, _, user_id = _resolver_paciente_y_rol(request)
     med = db.query(Medicamento).filter(
         Medicamento.id == med_id,
         Medicamento.paciente_id == paciente_id,
-    ).first()
+    ).with_for_update().first()
     if not med:
         raise HTTPException(status_code=404, detail="Medicamento no encontrado")
 
-    # Protección contra tomas sin stock:
+    ahora_local = datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
+    if med.fecha_inicio and ahora_local.date() < med.fecha_inicio:
+        raise HTTPException(status_code=409, detail="El tratamiento aún no ha comenzado.")
+    if med.fecha_fin and ahora_local.date() > med.fecha_fin:
+        raise HTTPException(status_code=409, detail="El tratamiento ya finalizó.")
+
+    fecha_ancla = med.fecha_inicio or ahora_local.date()
+    toma_ancla = datetime.combine(fecha_ancla, med.hora_inicio)
+    if med.fecha_inicio is None and toma_ancla > ahora_local:
+        toma_ancla -= timedelta(days=1)
+    if toma_ancla > ahora_local:
+        raise HTTPException(status_code=409, detail="La hora de esta toma aún no llega.")
+
+    frecuencia = max(med.frecuencia_horas, 1)
+    ciclos_transcurridos = int((ahora_local - toma_ancla).total_seconds() // (frecuencia * 3600))
+    toma_programada_local = toma_ancla + timedelta(hours=ciclos_transcurridos * frecuencia)
+    toma_programada_utc = toma_programada_local.replace(
+        tzinfo=ZoneInfo("America/Bogota")
+    ).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+    # Una sola respuesta por dosis programada; el bloqueo de la fila evita carreras
+    # entre solicitudes simultáneas desde más de un dispositivo.
+    toma_existente = (
+        db.query(Toma)
+        .filter(
+            Toma.medicamento_id == med_id,
+            Toma.paciente_id == paciente_id,
+            Toma.fecha_hora_programada == toma_programada_utc,
+        )
+        .first()
+    )
+    if toma_existente:
+        if toma_existente.estado == EstadoToma.tomado:
+            return toma_existente
+        if datos.estado == EstadoToma.pendiente:
+            return toma_existente
+        if (
+            toma_existente.estado == EstadoToma.omitido
+            and datos.estado != EstadoToma.tomado
+        ):
+            return toma_existente
+
     if datos.estado == EstadoToma.tomado and med.stock_actual <= 0:
         raise HTTPException(
             status_code=400,
             detail=f"No hay stock suficiente para '{med.nombre}'. Recarga el medicamento antes de registrar la toma."
         )
 
-    # Protección de Idempotencia contra tomas repetidas:
-    # Si ya existe una toma registrada hoy para este medicamento (en cualquier estado tomado u omitido)
-    # dentro de la ventana de la dosis (últimas 2 horas), evitar duplicados.
-    umbral_duplicado = datetime.utcnow() - timedelta(hours=2)
-    toma_reciente = (
-        db.query(Toma)
-        .filter(
-            Toma.medicamento_id == med_id,
-            Toma.paciente_id == paciente_id,
-            Toma.created_at >= umbral_duplicado,
-        )
-        .order_by(Toma.created_at.desc())
-        .first()
+    fecha_hora_confirmacion = (
+        datetime.utcnow() if datos.estado == EstadoToma.tomado else None
     )
-    if toma_reciente:
-        # Si ya existe y quieren actualizar el estado (ej. de pendiente a tomado)
-        if toma_reciente.estado != datos.estado:
-            if datos.estado == EstadoToma.tomado and toma_reciente.estado != EstadoToma.tomado:
-                if med.stock_actual > 0:
-                    med.stock_actual -= 1
-                toma_reciente.fecha_hora_confirmacion = datetime.utcnow()
-            elif toma_reciente.estado == EstadoToma.tomado and datos.estado != EstadoToma.tomado:
-                med.stock_actual += 1 # revertir stock
-                toma_reciente.fecha_hora_confirmacion = None
-            toma_reciente.estado = datos.estado
-            db.commit()
-            db.refresh(toma_reciente)
-        return toma_reciente
 
-    fecha_hora_programada   = datos.fecha_hora_programada or datetime.utcnow()
-    fecha_hora_confirmacion = datetime.utcnow() if datos.estado == EstadoToma.tomado else None
+    toma = toma_existente or Toma(
+        medicamento_id=med_id,
+        paciente_id=paciente_id,
+        fecha_hora_programada=toma_programada_utc,
+    )
+    toma.estado = datos.estado
+    toma.fecha_hora_confirmacion = fecha_hora_confirmacion
 
     # Descuento de stock y disparo de alerta si se toma
     if datos.estado == EstadoToma.tomado:
@@ -797,7 +865,7 @@ def registrar_toma(
         if med.stock_actual <= med.stock_minimo_alerta:
             try:
                 with httpx.Client(timeout=5.0) as client:
-                    client.post(
+                    response = client.post(
                         f"{NOTIFICATION_SERVICE_URL}/notifications/internal/alerta-stock",
                         json={
                             "paciente_id": str(med.paciente_id),
@@ -806,23 +874,17 @@ def registrar_toma(
                             "stock_actual": med.stock_actual,
                         }
                     )
-            except Exception:
-                # No detener el registro de la toma si notification-service falla temporalmente
-                pass
+                    response.raise_for_status()
+            except httpx.HTTPError as error:
+                logger.warning("No se pudo notificar el stock bajo de %s: %s", med.id, error)
 
-    toma = Toma(
-        medicamento_id=med_id,
-        paciente_id=paciente_id,
-        fecha_hora_programada=fecha_hora_programada,
-        estado=datos.estado,
-        fecha_hora_confirmacion=fecha_hora_confirmacion,
-    )
-    db.add(toma)
+    if toma_existente is None:
+        db.add(toma)
 
     # Registrar evento en auditoría médica
     db.add(RegistroAuditoria(
         paciente_id=med.paciente_id,
-        usuario_id=UUID(user_id if 'user_id' in locals() else str(paciente_id)),
+        usuario_id=UUID(user_id),
         accion="REGISTRO_TOMA",
         detalle=f"Toma de '{med.nombre}' marcada como '{datos.estado.value}'. Stock restante: {med.stock_actual}",
         fecha_hora=datetime.utcnow()
@@ -830,6 +892,19 @@ def registrar_toma(
 
     db.commit()
     db.refresh(toma)
+    if datos.estado == EstadoToma.tomado:
+        try:
+            with httpx.Client(timeout=5.0) as client:
+                response = client.post(
+                    f"{NOTIFICATION_SERVICE_URL}/notifications/internal/cerrar-recordatorios-toma",
+                    json={
+                        "referencia_id": str(med.id),
+                        "fecha_hora_programada": toma_programada_local.isoformat(),
+                    },
+                )
+                response.raise_for_status()
+        except httpx.HTTPError as error:
+            logger.warning("No se pudieron cerrar los avisos de la toma %s: %s", toma.id, error)
     return toma
 
 
@@ -876,6 +951,3 @@ def actualizar_stock(
     db.commit()
     db.refresh(med)
     return med
-
-
-

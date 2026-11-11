@@ -13,6 +13,7 @@ class HealthProvider extends ChangeNotifier {
   String _recomendacionHoy = 'Recuerda registrar cómo te sientes hoy.';
   String? _selectedMood;
   bool _isLoading = false;
+  bool _isRecordingMood = false;
   String? _errorMessage;
 
   List<MoodModel> get todayMoods => _todayMoods;
@@ -21,40 +22,45 @@ class HealthProvider extends ChangeNotifier {
   String get recomendacionHoy => _recomendacionHoy;
   String? get selectedMood => _selectedMood;
   bool get isLoading => _isLoading;
+  bool get isRecordingMood => _isRecordingMood;
   String? get errorMessage => _errorMessage;
 
-  Future<void> fetchHealthData() async {
-    _isLoading = true;
+  Future<void> fetchHealthData({bool silent = false}) async {
+    if (!silent) _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       _todayMoods = await _repository.getTodayMoods();
-      if (_todayMoods.isNotEmpty) {
-        _selectedMood = _todayMoods.first.animo;
-      }
+      _selectedMood = _todayMoods.isNotEmpty ? _todayMoods.first.animo : null;
       _recomendacionHoy = await _repository.getRecomendacionHoy();
       _appointments = await _repository.getAppointments();
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }
 
   Future<bool> recordMood(String animo) async {
+    if (_isRecordingMood) return false;
+    final previousMood = _selectedMood;
+    _isRecordingMood = true;
     _selectedMood = animo;
     notifyListeners();
     try {
       await _repository.recordMood(animo);
       _recomendacionHoy = await _repository.getRecomendacionHoy();
-      await fetchHealthData();
+      await fetchHealthData(silent: true);
       return true;
     } catch (e) {
+      _selectedMood = previousMood;
       _errorMessage = e.toString();
-      notifyListeners();
       return false;
+    } finally {
+      _isRecordingMood = false;
+      notifyListeners();
     }
   }
 
@@ -140,14 +146,16 @@ class HealthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> cancelAppointment(String id) async {
+  Future<bool> cancelAppointment(String id) async {
     try {
       await _repository.cancelAppointment(id);
       _appointments = await _repository.getAppointments();
       notifyListeners();
+      return true;
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();
+      return false;
     }
   }
 }

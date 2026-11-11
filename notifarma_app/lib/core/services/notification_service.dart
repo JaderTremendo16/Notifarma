@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:notifarma_app/core/network/api_client.dart';
@@ -16,7 +17,9 @@ class NotificationService {
   Future<void> initialize() async {
     if (kIsWeb) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -39,7 +42,9 @@ class NotificationService {
 
     // Solicitar permisos de notificación en tiempo de ejecución (Android 13+ / iOS)
     final androidImpl = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidImpl != null) {
       await androidImpl.requestNotificationsPermission();
       try {
@@ -86,7 +91,10 @@ class NotificationService {
 
   void startPolling({Duration interval = const Duration(minutes: 1)}) {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(interval, (_) => checkPendingNotifications());
+    _pollingTimer = Timer.periodic(
+      interval,
+      (_) => checkPendingNotifications(),
+    );
     // Initial check immediately
     checkPendingNotifications();
   }
@@ -101,11 +109,22 @@ class NotificationService {
   Future<List<dynamic>> checkPendingNotifications() async {
     try {
       final response = await _apiClient.get('/notifications/pendientes');
-      if (response is List && response.isNotEmpty) {
+      if (response is List) {
+        final pendingIds = response
+            .map((item) => item['id'].toString())
+            .toSet();
+        final resolvedIds = _notificacionesMostradas.difference(pendingIds);
+        for (final id in resolvedIds) {
+          if (!kIsWeb) {
+            await _notificationsPlugin.cancel(id.hashCode);
+          }
+          _notificacionesMostradas.remove(id);
+        }
+
         for (var i = 0; i < response.length; i++) {
           final item = response[i];
           final notifId = item['id'].toString();
-          
+
           // Si ya se mostró esta notificación localmente, evitar hacerla sonar repetidamente
           if (_notificacionesMostradas.contains(notifId)) {
             continue;
@@ -115,8 +134,8 @@ class NotificationService {
           final tipo = item['tipo'] ?? 'medicamento';
 
           final notificationTitle = tipo == 'cita'
-              ? '📅 Recordatorio de Cita Médica'
-              : '💊 Hora de tomar tu Medicamento';
+              ? 'Recordatorio de cita médica'
+              : 'Hora de tomar el medicamento';
 
           await showLocalNotification(
             id: notifId.hashCode,

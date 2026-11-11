@@ -6,6 +6,7 @@ import 'package:notifarma_app/core/providers/theme_provider.dart';
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
 import 'package:notifarma_app/features/health/providers/health_provider.dart';
 import 'package:notifarma_app/shared/widgets/senior_header.dart';
+import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
 
 class WellnessScreen extends StatefulWidget {
   const WellnessScreen({super.key});
@@ -23,10 +24,18 @@ class _WellnessScreenState extends State<WellnessScreen> {
     });
   }
 
-  void _hacerLlamada(BuildContext context, String numero, String destinatario) async {
+  void _hacerLlamada(
+    BuildContext context,
+    String numero,
+    String destinatario,
+  ) async {
     final cleanNumber = numero.replaceAll(RegExp(r'\s+|-'), '').trim();
     if (cleanNumber.isEmpty) {
-      _showSnackBar(context, 'No hay un número válido configurado para $destinatario.', isError: true);
+      _showSnackBar(
+        context,
+        'No hay un número válido configurado para $destinatario.',
+        isError: true,
+      );
       return;
     }
 
@@ -36,17 +45,33 @@ class _WellnessScreenState extends State<WellnessScreen> {
         await launchUrl(url);
       } else {
         if (!context.mounted) return;
-        _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).', isError: true);
+        _showSnackBar(
+          context,
+          'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).',
+          isError: true,
+        );
       }
     } catch (_) {
       if (!context.mounted) return;
-      _showSnackBar(context, 'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).', isError: true);
+      _showSnackBar(
+        context,
+        'No se pudo abrir el marcador para llamar a $destinatario ($cleanNumber).',
+        isError: true,
+      );
     }
   }
 
-  void _callEmergencyContact(BuildContext context, String? name, String? phone) {
-    final contactName = (name != null && name.trim().isNotEmpty) ? name.trim() : 'Contacto de Emergencia';
-    final targetPhone = (phone != null && phone.trim().isNotEmpty) ? phone.trim() : '123';
+  void _callEmergencyContact(
+    BuildContext context,
+    String? name,
+    String? phone,
+  ) {
+    final contactName = (name != null && name.trim().isNotEmpty)
+        ? name.trim()
+        : 'Contacto de Emergencia';
+    final targetPhone = (phone != null && phone.trim().isNotEmpty)
+        ? phone.trim()
+        : '123';
     _hacerLlamada(context, targetPhone, contactName);
   }
 
@@ -57,9 +82,19 @@ class _WellnessScreenState extends State<WellnessScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.sosRed, size: 32),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: AppColors.sosRed,
+              size: 32,
+            ),
             SizedBox(width: 10),
-            Text('¡ALERTA SOS!', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.sosRed)),
+            Text(
+              '¡ALERTA SOS!',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.sosRed,
+              ),
+            ),
           ],
         ),
         content: const Text(
@@ -69,7 +104,13 @@ class _WellnessScreenState extends State<WellnessScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('CANCELAR', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'CANCELAR',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           ElevatedButton.icon(
             onPressed: () {
@@ -78,14 +119,21 @@ class _WellnessScreenState extends State<WellnessScreen> {
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.sosRed),
             icon: const Icon(Icons.phone_in_talk_rounded, color: Colors.white),
-            label: const Text('LLAMAR AL 123', style: TextStyle(fontWeight: FontWeight.bold)),
+            label: const Text(
+              'LLAMAR AL 123',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _showSnackBar(BuildContext context, String message, {bool isError = false}) {
+  void _showSnackBar(
+    BuildContext context,
+    String message, {
+    bool isError = false,
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(fontSize: 16)),
@@ -103,7 +151,8 @@ class _WellnessScreenState extends State<WellnessScreen> {
     final isDark = themeProvider.isDarkMode;
     final recommendation = healthProvider.recomendacionHoy;
     final selectedMood = healthProvider.selectedMood;
-    final contactName = authProvider.user?.contactoEmergenciaNombre ?? 'María (Hija)';
+    final contactName =
+        authProvider.user?.contactoEmergenciaNombre ?? 'María (Hija)';
     final contactPhone = authProvider.user?.contactoEmergenciaTelefono;
 
     return Column(
@@ -126,7 +175,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight,
                             letterSpacing: 1.1,
                           ),
                         ),
@@ -136,25 +187,57 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
                           ),
                         ),
                         const SizedBox(height: 14),
 
-                        // Emojis Horizontal Selection Bar
+                        // Mood options use the existing palette instead of platform-dependent emoji glyphs.
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              _buildEmojiOption(context, 'muy_bien', '🤩', 'Muy bien', selectedMood, healthProvider, isDark),
+                              _buildMoodOption(
+                                context,
+                                'muy_bien',
+                                Icons.sentiment_very_satisfied_rounded,
+                                'Muy bien',
+                                selectedMood,
+                                healthProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'bien', '😊', 'Bien', selectedMood, healthProvider, isDark),
+                              _buildMoodOption(
+                                context,
+                                'bien',
+                                Icons.sentiment_satisfied_rounded,
+                                'Bien',
+                                selectedMood,
+                                healthProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'regular', '😐', 'Regular', selectedMood, healthProvider, isDark),
+                              _buildMoodOption(
+                                context,
+                                'regular',
+                                Icons.sentiment_neutral_rounded,
+                                'Regular',
+                                selectedMood,
+                                healthProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'mal', '😣', 'Con dolor', selectedMood, healthProvider, isDark),
-                              const SizedBox(width: 10),
-                              _buildEmojiOption(context, 'mal', '😵', 'Mareado', selectedMood, healthProvider, isDark),
+                              _buildMoodOption(
+                                context,
+                                'mal',
+                                Icons.sentiment_dissatisfied_rounded,
+                                'Mal',
+                                selectedMood,
+                                healthProvider,
+                                isDark,
+                              ),
                             ],
                           ),
                         ),
@@ -166,10 +249,16 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           decoration: BoxDecoration(
                             color: isDark ? AppColors.cardDark : Colors.white,
                             borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                            border: Border.all(
+                              color: isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.borderLight,
+                            ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+                                color: Colors.black.withValues(
+                                  alpha: isDark ? 0.2 : 0.03,
+                                ),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -183,22 +272,31 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                                      color: isDark
+                                          ? const Color(0xFF1E293B)
+                                          : const Color(0xFFEFF6FF),
                                       borderRadius: BorderRadius.circular(16),
                                     ),
-                                    child: const Icon(Icons.tips_and_updates_rounded, color: AppColors.primaryBlue, size: 28),
+                                    child: const Icon(
+                                      Icons.tips_and_updates_rounded,
+                                      color: AppColors.primaryBlue,
+                                      size: 28,
+                                    ),
                                   ),
                                   const SizedBox(width: 14),
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'CONSEJO DE BIENESTAR',
                                           style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.bold,
-                                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                            color: isDark
+                                                ? AppColors.textSecondaryDark
+                                                : AppColors.textSecondaryLight,
                                             letterSpacing: 0.8,
                                           ),
                                         ),
@@ -208,7 +306,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                           style: TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.bold,
-                                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                                            color: isDark
+                                                ? AppColors.textPrimaryDark
+                                                : AppColors.textPrimaryLight,
                                           ),
                                         ),
                                       ],
@@ -220,16 +320,24 @@ class _WellnessScreenState extends State<WellnessScreen> {
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                                  color: isDark
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFFF8FAFC),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                    color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                                    color: isDark
+                                        ? const Color(0xFF334155)
+                                        : const Color(0xFFE2E8F0),
                                   ),
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(Icons.shield_outlined, color: AppColors.primaryBlue, size: 22),
+                                    const Icon(
+                                      Icons.shield_outlined,
+                                      color: AppColors.primaryBlue,
+                                      size: 22,
+                                    ),
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
@@ -237,7 +345,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                         style: TextStyle(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w600,
-                                          color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                                          color: isDark
+                                              ? AppColors.textPrimaryDark
+                                              : AppColors.textPrimaryLight,
                                           height: 1.4,
                                         ),
                                       ),
@@ -256,7 +366,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight,
                             letterSpacing: 1.1,
                           ),
                         ),
@@ -266,21 +378,42 @@ class _WellnessScreenState extends State<WellnessScreen> {
                           decoration: BoxDecoration(
                             color: isDark ? AppColors.cardDark : Colors.white,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                            border: Border.all(
+                              color: isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.borderLight,
+                            ),
                           ),
                           child: InkWell(
-                            onTap: () => _callEmergencyContact(context, contactName, contactPhone),
+                            onTap: () => _callEmergencyContact(
+                              context,
+                              contactName,
+                              contactPhone,
+                            ),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 14,
+                                horizontal: 16,
+                              ),
                               decoration: BoxDecoration(
-                                color: AppColors.primaryBlue.withValues(alpha: 0.08),
+                                color: AppColors.primaryBlue.withValues(
+                                  alpha: 0.08,
+                                ),
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: AppColors.primaryBlue.withValues(alpha: 0.3)),
+                                border: Border.all(
+                                  color: AppColors.primaryBlue.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.phone_in_talk_rounded, color: AppColors.primaryBlue, size: 24),
+                                  const Icon(
+                                    Icons.phone_in_talk_rounded,
+                                    color: AppColors.primaryBlue,
+                                    size: 24,
+                                  ),
                                   const SizedBox(width: 10),
                                   Text(
                                     'Llamar a $contactName',
@@ -299,16 +432,25 @@ class _WellnessScreenState extends State<WellnessScreen> {
 
                         // SOS EMERGENCY BUTTON (Matching Image 2)
                         GestureDetector(
-                          onLongPress: () => _triggerSosAlert(context, contactName, contactPhone),
+                          onLongPress: () => _triggerSosAlert(
+                            context,
+                            contactName,
+                            contactPhone,
+                          ),
                           child: Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 18,
+                              horizontal: 20,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.sosRed,
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.sosRed.withValues(alpha: 0.4),
+                                  color: AppColors.sosRed.withValues(
+                                    alpha: 0.4,
+                                  ),
                                   blurRadius: 16,
                                   offset: const Offset(0, 6),
                                 ),
@@ -319,7 +461,11 @@ class _WellnessScreenState extends State<WellnessScreen> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.shield_rounded, color: Colors.white, size: 28),
+                                    Icon(
+                                      Icons.shield_rounded,
+                                      color: Colors.white,
+                                      size: 28,
+                                    ),
                                     SizedBox(width: 10),
                                     Text(
                                       'BOTÓN DE AUXILIO SOS',
@@ -354,10 +500,10 @@ class _WellnessScreenState extends State<WellnessScreen> {
     );
   }
 
-  Widget _buildEmojiOption(
+  Widget _buildMoodOption(
     BuildContext context,
     String animoValue,
-    String emoji,
+    IconData icon,
     String label,
     String? currentSelected,
     HealthProvider provider,
@@ -366,13 +512,27 @@ class _WellnessScreenState extends State<WellnessScreen> {
     final isSelected = currentSelected == animoValue;
 
     return GestureDetector(
-      onTap: () async {
-        final ok = await provider.recordMood(animoValue);
-        if (!context.mounted) return;
-        if (ok) {
-          _showSnackBar(context, 'Estado de ánimo "$label" registrado');
-        }
-      },
+      onTap: provider.isRecordingMood
+          ? null
+          : () async {
+              final ok = await provider.recordMood(animoValue);
+              if (!context.mounted) return;
+              if (ok) {
+                InAppNotificationService().show(
+                  title: 'Estado guardado',
+                  message: 'Registramos cómo te sientes: $label.',
+                  type: TopNotificationType.info,
+                  duration: const Duration(seconds: 3),
+                );
+              } else {
+                _showSnackBar(
+                  context,
+                  provider.errorMessage ??
+                      'No se pudo guardar el estado de ánimo.',
+                  isError: true,
+                );
+              }
+            },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         width: 82,
@@ -398,7 +558,20 @@ class _WellnessScreenState extends State<WellnessScreen> {
         ),
         child: Column(
           children: [
-            Text(emoji, style: const TextStyle(fontSize: 32)),
+            AnimatedScale(
+              scale: isSelected ? 1.08 : 1,
+              duration: const Duration(milliseconds: 180),
+              child: Icon(
+                icon,
+                key: ValueKey('$animoValue-$isSelected'),
+                size: 32,
+                color: isSelected
+                    ? AppColors.primaryBlue
+                    : (isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight),
+              ),
+            ),
             const SizedBox(height: 6),
             Text(
               label,
@@ -408,7 +581,9 @@ class _WellnessScreenState extends State<WellnessScreen> {
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                 color: isSelected
                     ? AppColors.primaryBlue
-                    : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight),
+                    : (isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight),
               ),
             ),
           ],

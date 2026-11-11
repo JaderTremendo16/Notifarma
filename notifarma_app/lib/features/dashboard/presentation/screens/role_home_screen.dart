@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:notifarma_app/core/config/app_theme.dart';
+import 'package:notifarma_app/core/network/api_exception.dart';
 import 'package:notifarma_app/core/providers/theme_provider.dart';
+import 'package:notifarma_app/core/services/notification_service.dart';
 import 'package:notifarma_app/core/utils/audio_feedback.dart';
 import 'package:notifarma_app/core/utils/date_formatter.dart';
 import 'package:notifarma_app/core/utils/pdf_downloader.dart';
@@ -11,6 +15,7 @@ import 'package:notifarma_app/features/auth/presentation/widgets/link_code_dialo
 import 'package:notifarma_app/features/auth/providers/auth_provider.dart';
 import 'package:notifarma_app/features/dashboard/presentation/screens/main_shell_screen.dart';
 import 'package:notifarma_app/features/health/data/models/appointment_model.dart';
+import 'package:notifarma_app/features/health/presentation/widgets/appointment_edit_dialog.dart';
 import 'package:notifarma_app/features/health/data/repositories/health_repository.dart';
 import 'package:notifarma_app/features/medications/data/repositories/medication_repository.dart';
 import 'package:notifarma_app/shared/widgets/theme_toggle_switch.dart';
@@ -23,40 +28,217 @@ class RoleHomeScreen extends StatefulWidget {
   State<RoleHomeScreen> createState() => _RoleHomeScreenState();
 }
 
-class _RoleHomeScreenState extends State<RoleHomeScreen> {
+class _RoleHomeScreenState extends State<RoleHomeScreen>
+    with WidgetsBindingObserver {
   final MedicationRepository _medRepo = MedicationRepository();
   final HealthRepository _healthRepo = HealthRepository();
   Map<String, dynamic>? _resumenCuidador;
   List<AppointmentModel> _patientAppointments = [];
   bool _isLoading = true;
   bool _isDownloadingPdf = false;
+  bool _isSyncing = false;
+  bool _refreshQueued = false;
+  bool _hasLoaded = false;
+  Timer? _syncTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _fetchCuidadorData();
+    _startSyncTimer();
   }
 
-  Future<void> _fetchCuidadorData() async {
-    setState(() => _isLoading = true);
-    final data = await _medRepo.getResumenCuidador();
-    List<AppointmentModel> citas = [];
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startSyncTimer();
+      _fetchCuidadorData(silent: true);
+    } else {
+      _syncTimer?.cancel();
+      _syncTimer = null;
+    }
+  }
+
+  void _startSyncTimer() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _fetchCuidadorData(silent: true),
+    );
+  }
+
+  Future<void> _fetchCuidadorData({bool silent = false}) async {
+    if (!mounted) return;
+    if (_isSyncing) {
+      _refreshQueued = true;
+      return;
+    }
+    _isSyncing = true;
+    if (!_hasLoaded) {
+      setState(() => _isLoading = true);
+    }
+
+    Map<String, dynamic>? data = _resumenCuidador;
+    List<AppointmentModel> citas = _patientAppointments;
+    String? errorMessage;
+    var noPatientLinked = false;
     try {
-      citas = await _healthRepo.getAppointments();
-    } catch (_) {}
-    if (mounted) {
-      setState(() {
-        _resumenCuidador = data;
-        _patientAppointments = citas.where((c) => c.activo).toList();
-        _isLoading = false;
-      });
+      try {
+        final refreshed = await context.read<AuthProvider>().refreshProfile();
+        if (!refreshed) {
+          errorMessage = 'No se pudo actualizar la información de vinculación.';
+        }
+        data = await _medRepo.getResumenCuidador();
+      } catch (e) {
+        if (_isNoPatientLinked(e)) {
+          noPatientLinked = true;
+          data = null;
+          errorMessage = null;
+        } else {
+          errorMessage = 'No se pudo actualizar el panel: $e';
+        }
+      }
+      if (noPatientLinked) {
+        citas = [];
+      } else {
+        try {
+          citas = await _healthRepo.getAppointments();
+        } catch (e) {
+          if (_isNoPatientLinked(e)) {
+            noPatientLinked = true;
+            citas = [];
+            data = null;
+          } else {
+            errorMessage ??= 'No se pudieron actualizar las citas: $e';
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          if (data != null) {
+            _resumenCuidador = data;
+          } else if (errorMessage == null || noPatientLinked) {
+            _resumenCuidador = null;
+          }
+          _patientAppointments = citas.where((c) => c.activo).toList();
+          _isLoading = false;
+          _hasLoaded = true;
+        });
+        if (errorMessage != null && !silent) {
+          InAppNotificationService().show(
+            title: 'No se pudo actualizar',
+            message: errorMessage,
+            type: TopNotificationType.sosAlert,
+            duration: const Duration(seconds: 4),
+          );
+        }
+      }
+    } finally {
+      _isSyncing = false;
+      if (_refreshQueued && mounted) {
+        _refreshQueued = false;
+        Future.microtask(() => _fetchCuidadorData(silent: true));
+      }
+    }
+  }
+
+  bool _isNoPatientLinked(Object error) {
+    return error is ApiException &&
+        error.statusCode == 404 &&
+        error.message.contains('No tienes ningún paciente vinculado');
+  }
+
+  Future<void> _editAppointment(AppointmentModel appointment) async {
+    final changes = await showAppointmentEditDialog(context, appointment);
+    if (changes == null || !mounted) return;
+
+    try {
+      await _healthRepo.updateAppointment(
+        id: appointment.id,
+        especialidad: changes.especialidad,
+        medico: changes.medico,
+        lugar: changes.lugar,
+        direccion: changes.direccion,
+        fechaHoraIso: changes.fechaHoraIso,
+        notas: changes.notas,
+      );
+      if (!mounted) return;
+      AudioFeedback.playSuccess();
+      await _fetchCuidadorData(silent: true);
+      await NotificationService().checkPendingNotifications();
+      InAppNotificationService().show(
+        title: 'Recordatorio actualizado',
+        message: 'Los datos y avisos de la cita se actualizaron.',
+        type: TopNotificationType.info,
+        duration: const Duration(seconds: 3),
+      );
+    } catch (e) {
+      InAppNotificationService().show(
+        title: 'No se pudo actualizar',
+        message: 'No se pudieron guardar los cambios: $e',
+        type: TopNotificationType.sosAlert,
+        duration: const Duration(seconds: 4),
+      );
+    }
+  }
+
+  Future<void> _cancelAppointment(AppointmentModel appointment) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar recordatorio'),
+        content: Text(
+          '¿Quieres cancelar el recordatorio de ${appointment.especialidad}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancelar cita'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    try {
+      await _healthRepo.cancelAppointment(appointment.id);
+      if (!mounted) return;
+      AudioFeedback.playSuccess();
+      await _fetchCuidadorData(silent: true);
+      await NotificationService().checkPendingNotifications();
+      InAppNotificationService().show(
+        title: 'Recordatorio cancelado',
+        message: 'Se cancelaron los avisos asociados a la cita.',
+        type: TopNotificationType.info,
+        duration: const Duration(seconds: 3),
+      );
+    } catch (e) {
+      InAppNotificationService().show(
+        title: 'No se pudo cancelar',
+        message: 'No se pudo cancelar la cita: $e',
+        type: TopNotificationType.sosAlert,
+        duration: const Duration(seconds: 4),
+      );
     }
   }
 
   void _downloadAdherencePdf(BuildContext context) async {
     setState(() => _isDownloadingPdf = true);
     InAppNotificationService().show(
-      title: '📄 Generando Reporte PDF',
+      title: 'Generando reporte PDF',
       message: 'Procesando el historial médico con zona horaria local...',
       type: TopNotificationType.info,
       duration: const Duration(seconds: 3),
@@ -71,7 +253,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
         );
         if (!mounted) return;
         InAppNotificationService().show(
-          title: '✅ Reporte Descargado',
+          title: 'Reporte descargado',
           message: 'El informe de adherencia se ha guardado correctamente.',
           type: TopNotificationType.info,
           duration: const Duration(seconds: 4),
@@ -82,7 +264,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
     } catch (e) {
       if (!mounted) return;
       InAppNotificationService().show(
-        title: '❌ Error al Descargar',
+        title: 'Error al descargar',
         message: 'No se pudo generar el reporte: $e',
         type: TopNotificationType.sosAlert,
         duration: const Duration(seconds: 5),
@@ -192,7 +374,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: 2,
                       decoration: const InputDecoration(
-                        labelText: 'Indicaciones o notas (ej. Tomar con el desayuno)',
+                        labelText:
+                            'Indicaciones o notas (ej. Tomar con el desayuno)',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -206,7 +389,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                           initialTime: selectedTime,
                           builder: (context, child) {
                             return MediaQuery(
-                              data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                              data: MediaQuery.of(context)
+                                  .copyWith(alwaysUse24HourFormat: false),
                               child: child!,
                             );
                           },
@@ -290,7 +474,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                           await _medRepo.createMedication(
                             nombre: nombreCtrl.text.trim(),
                             dosis: dosisCtrl.text.trim(),
-                            indicaciones: indicacionesCtrl.text.trim().isNotEmpty
+                            indicaciones:
+                                indicacionesCtrl.text.trim().isNotEmpty
                                 ? indicacionesCtrl.text.trim()
                                 : null,
                             frecuenciaHoras:
@@ -306,7 +491,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                           if (ctx.mounted) Navigator.pop(ctx);
                           _fetchCuidadorData();
                           InAppNotificationService().show(
-                            title: '✅ Medicamento Inscrito',
+                            title: 'Medicamento inscrito',
                             message:
                                 'Se programó ${nombreCtrl.text.trim()} para tu familiar.',
                             type: TopNotificationType.info,
@@ -314,7 +499,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                           );
                         } catch (e) {
                           InAppNotificationService().show(
-                            title: '❌ Error',
+                            title: 'Error',
                             message: 'Error al inscribir medicamento: $e',
                             type: TopNotificationType.sosAlert,
                             duration: const Duration(seconds: 4),
@@ -465,8 +650,11 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
     final direccionCtrl = TextEditingController();
     final notasCtrl = TextEditingController();
 
-    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
-    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+    final ahora = DateFormatter.nowColombia();
+    DateTime selectedDate = ahora;
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(
+      ahora.add(const Duration(minutes: 30)),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -608,8 +796,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                               final pickedDate = await showDatePicker(
                                 context: modalCtx,
                                 initialDate: selectedDate,
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(
+                                firstDate: DateFormatter.nowColombia(),
+                                lastDate: DateFormatter.nowColombia().add(
                                   const Duration(days: 365),
                                 ),
                               );
@@ -645,7 +833,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                 initialTime: selectedTime,
                                 builder: (context, child) {
                                   return MediaQuery(
-                                    data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                                    data: MediaQuery.of(context)
+                                        .copyWith(alwaysUse24HourFormat: false),
                                     child: child!,
                                   );
                                 },
@@ -700,30 +889,30 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                         }
 
                         // Validación: No permitir citas en fechas u horas pasadas
-                        final fechaHoraCita = DateTime(
+                        final fechaHoraCita = DateTime.utc(
                           selectedDate.year,
                           selectedDate.month,
                           selectedDate.day,
                           selectedTime.hour,
                           selectedTime.minute,
                         );
-                        if (fechaHoraCita.isBefore(DateTime.now())) {
+                        if (!fechaHoraCita.isAfter(
+                          DateFormatter.nowColombia(),
+                        )) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             const SnackBar(
-                              content: Text('La fecha y hora de la cita no puede ser en el pasado.'),
+                              content: Text(
+                                'La fecha y hora de la cita no puede ser en el pasado.',
+                              ),
                               backgroundColor: AppColors.sosRed,
                             ),
                           );
                           return;
                         }
 
-                        final h = selectedTime.hour.toString().padLeft(2, '0');
-                        final m = selectedTime.minute.toString().padLeft(
-                          2,
-                          '0',
+                        final fechaHoraIso = DateFormatter.toColombiaIsoString(
+                          fechaHoraCita,
                         );
-                        final fechaHoraIso =
-                            '${DateFormat('yyyy-MM-dd').format(selectedDate)}T$h:$m:00';
 
                         try {
                           await _healthRepo.createAppointment(
@@ -1071,7 +1260,7 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                             size: 20,
                           ),
                           label: const Text(
-                            'Inscribir Med',
+                            'Inscribir Medicamento',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
@@ -1477,10 +1666,14 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                 const Divider(height: 16),
                             itemBuilder: (ctx, idx) {
                               final t = tomasHoyList[idx];
-                              final estadoStr = (t['estado'] ?? '').toString().toLowerCase();
+                              final estadoStr = (t['estado'] ?? '')
+                                  .toString()
+                                  .toLowerCase();
                               final isTomado = estadoStr == 'tomado';
                               final isOmitido = estadoStr == 'omitido';
-                              final medNom = t['medicamento_nombre'] ?? 'Dosis #${idx + 1}';
+                              final medNom =
+                                  t['medicamento_nombre'] ??
+                                  'Dosis #${idx + 1}';
                               final dosis = t['medicamento_dosis'];
 
                               Color statusColor;
@@ -1514,7 +1707,8 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                       ),
                                       const SizedBox(width: 10),
                                       Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             medNom,
@@ -1532,8 +1726,10 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                               style: TextStyle(
                                                 fontSize: 12,
                                                 color: isDark
-                                                    ? AppColors.textSecondaryDark
-                                                    : AppColors.textSecondaryLight,
+                                                    ? AppColors
+                                                          .textSecondaryDark
+                                                    : AppColors
+                                                          .textSecondaryLight,
                                               ),
                                             ),
                                         ],
@@ -1546,7 +1742,9 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: statusColor.withValues(alpha: 0.15),
+                                      color: statusColor.withValues(
+                                        alpha: 0.15,
+                                      ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
@@ -1615,9 +1813,15 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                 const Divider(height: 16),
                             itemBuilder: (ctx, idx) {
                               final cita = _patientAppointments[idx];
-                              final fechaHora = DateTime.tryParse(cita.fechaHora);
+                              final fechaHora =
+                                  DateFormatter.tryParseColombiaDateTime(
+                                    cita.fechaHora,
+                                  );
                               final fechaFmt = fechaHora != null
-                                  ? DateFormat('EEE, d MMM • h:mm a', 'es').format(fechaHora.toLocal())
+                                  ? DateFormat(
+                                      'EEE, d MMM • h:mm a',
+                                      'es',
+                                    ).format(fechaHora)
                                   : cita.fechaHora;
 
                               Color estadoColor;
@@ -1671,10 +1875,16 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                             vertical: 3,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: estadoColor.withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: estadoColor.withValues(
+                                              alpha: 0.15,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                             border: Border.all(
-                                              color: estadoColor.withValues(alpha: 0.4),
+                                              color: estadoColor.withValues(
+                                                alpha: 0.4,
+                                              ),
                                             ),
                                           ),
                                           child: Text(
@@ -1686,12 +1896,40 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                             ),
                                           ),
                                         ),
+                                        if (est == 'programada' ||
+                                            est == 'sin_confirmar')
+                                          PopupMenuButton<String>(
+                                            tooltip: 'Opciones de la cita',
+                                            onSelected: (action) {
+                                              if (action == 'edit') {
+                                                _editAppointment(cita);
+                                              } else {
+                                                _cancelAppointment(cita);
+                                              }
+                                            },
+                                            itemBuilder: (context) => const [
+                                              PopupMenuItem(
+                                                value: 'edit',
+                                                child: Text(
+                                                  'Editar recordatorio',
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'cancel',
+                                                child: Text('Cancelar cita'),
+                                              ),
+                                            ],
+                                          ),
                                       ],
                                     ),
                                     const SizedBox(height: 6),
                                     Row(
                                       children: [
-                                        const Icon(Icons.event_rounded, size: 14, color: AppColors.morningBlue),
+                                        const Icon(
+                                          Icons.event_rounded,
+                                          size: 14,
+                                          color: AppColors.morningBlue,
+                                        ),
                                         const SizedBox(width: 6),
                                         Text(
                                           fechaFmt,
@@ -1702,18 +1940,27 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                         ),
                                       ],
                                     ),
-                                    if (cita.lugar != null && cita.lugar!.isNotEmpty) ...[
+                                    if (cita.lugar != null &&
+                                        cita.lugar!.isNotEmpty) ...[
                                       const SizedBox(height: 4),
                                       Row(
                                         children: [
-                                          const Icon(Icons.location_on_rounded, size: 14, color: AppColors.textSecondaryLight),
+                                          const Icon(
+                                            Icons.location_on_rounded,
+                                            size: 14,
+                                            color: AppColors.textSecondaryLight,
+                                          ),
                                           const SizedBox(width: 6),
                                           Expanded(
                                             child: Text(
                                               cita.lugar!,
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                                color: isDark
+                                                    ? AppColors
+                                                          .textSecondaryDark
+                                                    : AppColors
+                                                          .textSecondaryLight,
                                               ),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -1721,36 +1968,53 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
                                         ],
                                       ),
                                     ],
-                                    if (cita.direccion != null && cita.direccion!.isNotEmpty) ...[
+                                    if (cita.direccion != null &&
+                                        cita.direccion!.isNotEmpty) ...[
                                       const SizedBox(height: 2),
                                       Padding(
-                                        padding: const EdgeInsets.only(left: 20),
+                                        padding: const EdgeInsets.only(
+                                          left: 20,
+                                        ),
                                         child: Text(
                                           cita.direccion!,
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                            color: isDark
+                                                ? AppColors.textSecondaryDark
+                                                : AppColors.textSecondaryLight,
                                           ),
                                         ),
                                       ),
                                     ],
-                                    if (cita.notas != null && cita.notas!.isNotEmpty) ...[
+                                    if (cita.notas != null &&
+                                        cita.notas!.isNotEmpty) ...[
                                       const SizedBox(height: 6),
                                       Container(
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: isDark ? Colors.black26 : Colors.white,
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: isDark
+                                              ? Colors.black26
+                                              : Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
                                         ),
                                         child: Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.morningBlue),
+                                            const Icon(
+                                              Icons.info_outline_rounded,
+                                              size: 14,
+                                              color: AppColors.morningBlue,
+                                            ),
                                             const SizedBox(width: 6),
                                             Expanded(
                                               child: Text(
                                                 'Nota: ${cita.notas!}',
-                                                style: const TextStyle(fontSize: 11),
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -1851,7 +2115,10 @@ class _RoleHomeScreenState extends State<RoleHomeScreen> {
 
                 // ACCIÓN 2: Vincular otro Paciente
                 OutlinedButton.icon(
-                  onPressed: () => LinkCodeDialog.show(context),
+                  onPressed: () async {
+                    await LinkCodeDialog.show(context);
+                    await _fetchCuidadorData(silent: true);
+                  },
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                     side: BorderSide(

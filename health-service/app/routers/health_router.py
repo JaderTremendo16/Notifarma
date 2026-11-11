@@ -1,10 +1,12 @@
 import os
+import logging
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List, Tuple
 from uuid import UUID
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from app.database import get_db
 from app.models.health_model import EstadoAnimo, CitaMedica
@@ -26,6 +28,20 @@ AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8004")
 
 DEFAULT_TEST_PACIENTE_ID = "3f370ebf-9002-4064-9d0b-fbf8b36a5bec"
+ZONA_COLOMBIA = ZoneInfo("America/Bogota")
+logger = logging.getLogger(__name__)
+
+
+def _cerrar_notificaciones_cita(cita_id: UUID) -> None:
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            response = client.post(
+                f"{NOTIFICATION_SERVICE_URL}/notifications/internal/cerrar-por-referencia",
+                json={"referencia_id": str(cita_id)},
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as error:
+        logger.warning("No se pudieron cerrar avisos de la cita %s: %s", cita_id, error)
 
 def _resolver_paciente_y_rol(request: Request) -> Tuple[str, bool, str]:
     """
@@ -55,9 +71,13 @@ def _get_paciente_id(request: Request) -> str:
 
 
 def _inicio_hoy() -> datetime:
-    """Retorna el inicio del dia actual en UTC (00:00:00)."""
-    hoy = datetime.utcnow().date()
-    return datetime.combine(hoy, datetime.min.time())
+    """Retorna el inicio del día en Colombia como fecha UTC sin zona."""
+    inicio_colombia = datetime.combine(
+        datetime.now(ZONA_COLOMBIA).date(),
+        datetime.min.time(),
+        tzinfo=ZONA_COLOMBIA,
+    )
+    return inicio_colombia.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 # ─── Estado de Animo ──────────────────────────────────────────────────────────
@@ -83,7 +103,7 @@ def registrar_animo(
 
 @router.get("/mood/hoy", response_model=List[EstadoAnimoResponse])
 def animo_hoy(request: Request, db: Session = Depends(get_db)):
-    """Devuelve todos los registros de estado de animo del paciente para el dia de hoy (UTC)."""
+    """Devuelve los registros del día actual en Colombia."""
     paciente_id = _get_paciente_id(request)
     inicio = _inicio_hoy()
     return (
@@ -162,16 +182,16 @@ def recomendacion_hoy(request: Request, db: Session = Depends(get_db)):
 def citas_internas_activas(db: Session = Depends(get_db)):
     """
     Endpoint interno para el Notification Service (sin autenticación requerida).
-    Retorna citas activas y futuras para generar recordatorios.
+    Retorna citas recientes y futuras para recordatorios y detección de citas sin confirmar.
     """
-    ahora = datetime.utcnow()
-    # Citas activas desde hoy en adelante (hasta 2 días en el futuro para anticipación)
+    ahora = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
+    inicio = ahora - timedelta(days=1)
     limite = ahora + timedelta(days=2)
     citas = (
         db.query(CitaMedica)
         .filter(
             CitaMedica.activo == True,
-            CitaMedica.fecha_hora >= ahora,
+            CitaMedica.fecha_hora >= inicio,
             CitaMedica.fecha_hora <= limite
         )
         .all()
@@ -185,10 +205,32 @@ def citas_internas_activas(db: Session = Depends(get_db)):
             "lugar":        c.lugar,
             "direccion":    c.direccion,
             "estado":       c.estado,
-            "fecha_hora":   c.fecha_hora.isoformat()
+            "fecha_hora":   c.fecha_hora.replace(tzinfo=ZONA_COLOMBIA).isoformat()
         }
         for c in citas
     ]
+
+
+@router.post("/citas/internal/{cita_id}/sin-confirmar")
+def marcar_cita_sin_confirmar(cita_id: UUID, db: Session = Depends(get_db)):
+    cita = db.query(CitaMedica).filter(
+        CitaMedica.id == cita_id,
+        CitaMedica.activo == True,
+    ).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail="Cita médica no encontrada")
+
+    ahora = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
+    if ahora < cita.fecha_hora + timedelta(hours=2):
+        raise HTTPException(
+            status_code=409,
+            detail="La cita aún está dentro del período de confirmación.",
+        )
+    if cita.estado == "programada":
+        cita.estado = "sin_confirmar"
+        db.commit()
+        db.refresh(cita)
+    return {"estado": cita.estado}
 
 
 @router.post("/citas", response_model=CitaMedicaResponse, status_code=201)
@@ -226,11 +268,12 @@ def crear_cita(
                         "destinatario_id": str(paciente_id),
                         "tipo": "CITA_MEDICA",
                         "titulo": "📅 Nueva Cita Médica Programada",
+                        "referencia_id": str(nueva.id),
                         "mensaje": f"Tu cuidador te ha agendado una cita de {datos.especialidad} para el {datos.fecha_hora.strftime('%Y-%m-%d %I:%M %p')}.",
                     }
                 )
-        except Exception:
-            pass
+        except httpx.HTTPError as error:
+            logger.warning("No se pudo notificar la nueva cita %s: %s", nueva.id, error)
 
     return nueva
 
@@ -264,6 +307,15 @@ def actualizar_cita(
     if not cita:
         raise HTTPException(status_code=404, detail="Cita médica no encontrada")
 
+    if (
+        datos.fecha_hora is not None
+        and datos.fecha_hora <= datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La fecha y hora de la cita debe ser futura.",
+        )
+
     if datos.especialidad is not None:
         cita.especialidad = datos.especialidad
     if datos.medico is not None:
@@ -273,12 +325,15 @@ def actualizar_cita(
     if datos.direccion is not None:
         cita.direccion = datos.direccion
     if datos.fecha_hora is not None:
+        if datos.fecha_hora != cita.fecha_hora:
+            cita.estado = "programada"
         cita.fecha_hora = datos.fecha_hora
     if datos.notas is not None:
         cita.notas = datos.notas
 
     db.commit()
     db.refresh(cita)
+    _cerrar_notificaciones_cita(cita.id)
     return cita
 
 
@@ -311,21 +366,27 @@ def actualizar_estado_cita(
     if not cita:
         raise HTTPException(status_code=404, detail="Cita médica no encontrada")
     
-    cita.estado = datos.estado.lower()
+    estado = datos.estado
+    if cita.estado == estado:
+        return cita
+    if estado in {"asistida", "no_asistida"}:
+        ahora = datetime.now(ZONA_COLOMBIA).replace(tzinfo=None)
+        inicio_confirmacion = cita.fecha_hora - timedelta(minutes=150)
+        fin_confirmacion = cita.fecha_hora + timedelta(hours=2)
+        if not inicio_confirmacion <= ahora <= fin_confirmacion:
+            raise HTTPException(
+                status_code=409,
+                detail="La asistencia solo se puede confirmar desde 2 horas y media antes hasta 2 horas después de la cita.",
+            )
+
+    cita.estado = estado
     db.commit()
     db.refresh(cita)
 
     # Si la cita fue marcada como asistida o no_asistida, cerrar automáticamente
     # cualquier notificación pendiente asociada a esta cita en notification-service
     if cita.estado in ["asistida", "no_asistida"]:
-        try:
-            with httpx.Client(timeout=3.0) as client:
-                client.post(
-                    f"{NOTIFICATION_SERVICE_URL}/notifications/internal/cerrar-por-referencia",
-                    json={"referencia_id": str(cita.id)}
-                )
-        except Exception:
-            pass
+        _cerrar_notificaciones_cita(cita.id)
 
     return cita
 
@@ -342,5 +403,5 @@ def cancelar_cita(cita_id: UUID, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Cita médica no encontrada")
     cita.activo = False
     db.commit()
+    _cerrar_notificaciones_cita(cita.id)
     return {"message": f"Cita de {cita.especialidad} cancelada"}
-

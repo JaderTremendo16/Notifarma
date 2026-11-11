@@ -6,45 +6,140 @@ import 'package:notifarma_app/core/providers/theme_provider.dart';
 import 'package:notifarma_app/core/services/notification_service.dart';
 import 'package:notifarma_app/core/utils/audio_feedback.dart';
 import 'package:notifarma_app/core/utils/date_formatter.dart';
+import 'package:notifarma_app/features/health/data/models/appointment_model.dart';
 import 'package:notifarma_app/features/health/providers/health_provider.dart';
 import 'package:notifarma_app/features/medications/providers/medication_provider.dart';
+import 'package:notifarma_app/features/health/presentation/widgets/appointment_edit_dialog.dart';
 import 'package:notifarma_app/shared/widgets/senior_header.dart';
+import 'package:notifarma_app/shared/widgets/top_notification_banner.dart';
 
 class UnifiedHomeDashboardScreen extends StatefulWidget {
   final Function(int) onNavigateTab;
 
-  const UnifiedHomeDashboardScreen({
-    super.key,
-    required this.onNavigateTab,
-  });
+  const UnifiedHomeDashboardScreen({super.key, required this.onNavigateTab});
 
   @override
-  State<UnifiedHomeDashboardScreen> createState() => _UnifiedHomeDashboardScreenState();
+  State<UnifiedHomeDashboardScreen> createState() =>
+      _UnifiedHomeDashboardScreenState();
 }
 
-class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen> {
+class _UnifiedHomeDashboardScreenState
+    extends State<UnifiedHomeDashboardScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<MedicationProvider>(context, listen: false).fetchMedicationsData();
+      Provider.of<MedicationProvider>(
+        context,
+        listen: false,
+      ).fetchMedicationsData();
       Provider.of<HealthProvider>(context, listen: false).fetchHealthData();
     });
+  }
+
+  Future<void> _editAppointment(AppointmentModel appointment) async {
+    final changes = await showAppointmentEditDialog(context, appointment);
+    if (changes == null || !mounted) return;
+
+    final provider = context.read<HealthProvider>();
+    final ok = await provider.updateAppointment(
+      id: appointment.id,
+      especialidad: changes.especialidad,
+      medico: changes.medico,
+      lugar: changes.lugar,
+      direccion: changes.direccion,
+      fechaHoraIso: changes.fechaHoraIso,
+      notas: changes.notas,
+    );
+    if (!mounted) return;
+    if (ok) {
+      AudioFeedback.playSuccess();
+      await NotificationService().checkPendingNotifications();
+      InAppNotificationService().show(
+        title: 'Recordatorio actualizado',
+        message: 'Los datos y avisos de la cita se actualizaron.',
+        type: TopNotificationType.info,
+        duration: const Duration(seconds: 3),
+      );
+    } else {
+      InAppNotificationService().show(
+        title: 'No se pudo actualizar',
+        message:
+            provider.errorMessage ?? 'Inténtalo de nuevo cuando haya conexión.',
+        type: TopNotificationType.sosAlert,
+        duration: const Duration(seconds: 4),
+      );
+    }
+  }
+
+  Future<void> _cancelAppointment(AppointmentModel appointment) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancelar recordatorio'),
+        content: Text(
+          '¿Quieres cancelar el recordatorio de ${appointment.especialidad}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancelar cita'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    final provider = context.read<HealthProvider>();
+    final ok = await provider.cancelAppointment(appointment.id);
+    if (!mounted) return;
+    if (ok) {
+      AudioFeedback.playSuccess();
+      await NotificationService().checkPendingNotifications();
+      InAppNotificationService().show(
+        title: 'Recordatorio cancelado',
+        message: 'Se cancelaron los avisos asociados a la cita.',
+        type: TopNotificationType.info,
+        duration: const Duration(seconds: 3),
+      );
+    } else {
+      InAppNotificationService().show(
+        title: 'No se pudo cancelar',
+        message:
+            provider.errorMessage ?? 'Inténtalo de nuevo cuando haya conexión.',
+        type: TopNotificationType.sosAlert,
+        duration: const Duration(seconds: 4),
+      );
+    }
   }
 
   void _showEditMedicationModal(dynamic med) {
     final nombreCtrl = TextEditingController(text: med.nombre);
     final dosisCtrl = TextEditingController(text: med.dosis ?? '');
-    final frecuenciaCtrl = TextEditingController(text: med.frecuenciaHoras.toString());
+    final indicacionesCtrl = TextEditingController(
+      text: med.indicaciones ?? '',
+    );
+    final frecuenciaCtrl = TextEditingController(
+      text: med.frecuenciaHoras.toString(),
+    );
     final horaCtrl = TextEditingController(text: med.horaInicio);
     final stockCtrl = TextEditingController(text: med.stockActual.toString());
-    final stockMinCtrl = TextEditingController(text: med.stockMinimoAlerta.toString());
+    final stockMinCtrl = TextEditingController(
+      text: med.stockMinimoAlerta.toString(),
+    );
 
     // Extraer hora inicial para el TimePicker
     TimeOfDay selectedTime;
     try {
       final parts = med.horaInicio.split(':');
-      selectedTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+      selectedTime = TimeOfDay(
+        hour: int.parse(parts[0]),
+        minute: int.parse(parts[1]),
+      );
     } catch (_) {
       selectedTime = TimeOfDay.now();
     }
@@ -58,7 +153,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
-            final formattedTime = DateFormatter.formatTimeString(horaCtrl.text.trim());
+            final formattedTime = DateFormatter.formatTimeString(
+              horaCtrl.text.trim(),
+            );
 
             return Padding(
               padding: EdgeInsets.only(
@@ -78,6 +175,7 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   const SizedBox(height: 16),
                   TextField(
                     controller: nombreCtrl,
+                    textCapitalization: TextCapitalization.words,
                     style: const TextStyle(fontSize: 18),
                     decoration: const InputDecoration(
                       labelText: 'Nombre del Medicamento',
@@ -87,9 +185,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   const SizedBox(height: 12),
                   TextField(
                     controller: dosisCtrl,
+                    textCapitalization: TextCapitalization.sentences,
                     style: const TextStyle(fontSize: 18),
                     decoration: const InputDecoration(
                       labelText: 'Dosis (ej. 500mg / 1 tableta)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: indicacionesCtrl,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Indicaciones o notas',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -115,12 +224,23 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       decoration: const InputDecoration(
                         labelText: 'Hora de la Primera Toma',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.primaryBlue),
-                        suffixIcon: Icon(Icons.arrow_drop_down_rounded, color: AppColors.primaryBlue),
+                        prefixIcon: Icon(
+                          Icons.access_time_rounded,
+                          color: AppColors.primaryBlue,
+                        ),
+                        suffixIcon: Icon(
+                          Icons.arrow_drop_down_rounded,
+                          color: AppColors.primaryBlue,
+                        ),
                       ),
                       child: Text(
-                        formattedTime.isNotEmpty ? formattedTime : 'Seleccionar Hora',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        formattedTime.isNotEmpty
+                            ? formattedTime
+                            : 'Seleccionar Hora',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -166,25 +286,50 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   ElevatedButton(
                     onPressed: () async {
                       if (nombreCtrl.text.trim().isEmpty) return;
-                      final provider = Provider.of<MedicationProvider>(context, listen: false);
+                      final provider = Provider.of<MedicationProvider>(
+                        context,
+                        listen: false,
+                      );
                       final success = await provider.updateMedication(
                         med.id.toString(),
                         nombre: nombreCtrl.text.trim(),
                         dosis: dosisCtrl.text.trim(),
-                        frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? med.frecuenciaHoras,
+                        indicaciones: indicacionesCtrl.text.trim(),
+                        frecuenciaHoras:
+                            int.tryParse(frecuenciaCtrl.text.trim()) ??
+                            med.frecuenciaHoras,
                         horaInicio: horaCtrl.text.trim(),
-                        stockActual: int.tryParse(stockCtrl.text.trim()) ?? med.stockActual,
-                        stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? med.stockMinimoAlerta,
+                        stockActual:
+                            int.tryParse(stockCtrl.text.trim()) ??
+                            med.stockActual,
+                        stockMinimoAlerta:
+                            int.tryParse(stockMinCtrl.text.trim()) ??
+                            med.stockMinimoAlerta,
                       );
                       if (!mounted) return;
                       if (success) {
+                        AudioFeedback.playSuccess();
                         if (ctx.mounted) Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Medicamento actualizado correctamente ✏️')),
+                        InAppNotificationService().show(
+                          title: 'Medicamento actualizado',
+                          message: 'Se guardaron los cambios correctamente.',
+                          type: TopNotificationType.info,
+                          duration: const Duration(seconds: 3),
+                        );
+                      } else {
+                        InAppNotificationService().show(
+                          title: 'No se pudo actualizar',
+                          message:
+                              provider.errorMessage ??
+                              'Inténtalo de nuevo cuando haya conexión.',
+                          type: TopNotificationType.sosAlert,
+                          duration: const Duration(seconds: 4),
                         );
                       }
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryBlue),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryBlue,
+                    ),
                     child: const Text('GUARDAR CAMBIOS'),
                   ),
                 ],
@@ -203,9 +348,16 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Row(
           children: [
-            Icon(Icons.delete_outline_rounded, color: AppColors.sosRed, size: 28),
+            Icon(
+              Icons.delete_outline_rounded,
+              color: AppColors.sosRed,
+              size: 28,
+            ),
             SizedBox(width: 10),
-            Text('Eliminar Medicamento', style: TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              'Eliminar Medicamento',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Text(
@@ -215,25 +367,50 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('CANCELAR', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'CANCELAR',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              final provider = Provider.of<MedicationProvider>(context, listen: false);
+              final provider = Provider.of<MedicationProvider>(
+                context,
+                listen: false,
+              );
               final ok = await provider.deleteMedication(med.id.toString());
               if (!mounted) return;
               if (ok) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Medicamento "${med.nombre}" eliminado del pastillero 🗑️'),
-                    backgroundColor: AppColors.textSecondary,
-                  ),
+                AudioFeedback.playSuccess();
+                InAppNotificationService().show(
+                  title: 'Medicamento eliminado',
+                  message: 'Se quitó ${med.nombre} del pastillero.',
+                  type: TopNotificationType.info,
+                  duration: const Duration(seconds: 3),
+                );
+              } else {
+                InAppNotificationService().show(
+                  title: 'No se pudo eliminar',
+                  message:
+                      provider.errorMessage ??
+                      'Inténtalo de nuevo cuando haya conexión.',
+                  type: TopNotificationType.sosAlert,
+                  duration: const Duration(seconds: 4),
                 );
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.sosRed),
-            child: const Text('ELIMINAR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'ELIMINAR',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -243,6 +420,7 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
   void _showAddMedicationModal() {
     final nombreCtrl = TextEditingController();
     final dosisCtrl = TextEditingController();
+    final indicacionesCtrl = TextEditingController();
     final frecuenciaCtrl = TextEditingController(text: '12');
     final stockCtrl = TextEditingController(text: '30');
     final stockMinCtrl = TextEditingController(text: '5');
@@ -262,7 +440,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
-            final formattedTime = DateFormatter.formatTimeString(horaCtrl.text.trim());
+            final formattedTime = DateFormatter.formatTimeString(
+              horaCtrl.text.trim(),
+            );
 
             return Padding(
               padding: EdgeInsets.only(
@@ -282,6 +462,7 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   const SizedBox(height: 16),
                   TextField(
                     controller: nombreCtrl,
+                    textCapitalization: TextCapitalization.words,
                     style: const TextStyle(fontSize: 18),
                     decoration: const InputDecoration(
                       labelText: 'Nombre del Medicamento (ej. Losartán)',
@@ -291,9 +472,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   const SizedBox(height: 12),
                   TextField(
                     controller: dosisCtrl,
+                    textCapitalization: TextCapitalization.sentences,
                     style: const TextStyle(fontSize: 18),
                     decoration: const InputDecoration(
                       labelText: 'Dosis (ej. 50mg / 1 tableta)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: indicacionesCtrl,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Indicaciones o notas',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -319,12 +511,23 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       decoration: const InputDecoration(
                         labelText: 'Hora de la Primera Toma',
                         border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.accentOrange),
-                        suffixIcon: Icon(Icons.arrow_drop_down_rounded, color: AppColors.accentOrange),
+                        prefixIcon: Icon(
+                          Icons.access_time_rounded,
+                          color: AppColors.accentOrange,
+                        ),
+                        suffixIcon: Icon(
+                          Icons.arrow_drop_down_rounded,
+                          color: AppColors.accentOrange,
+                        ),
                       ),
                       child: Text(
-                        formattedTime.isNotEmpty ? formattedTime : 'Seleccionar Hora',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        formattedTime.isNotEmpty
+                            ? formattedTime
+                            : 'Seleccionar Hora',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -370,25 +573,48 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   ElevatedButton(
                     onPressed: () async {
                       if (nombreCtrl.text.trim().isEmpty) return;
-                      final provider = Provider.of<MedicationProvider>(context, listen: false);
+                      final provider = Provider.of<MedicationProvider>(
+                        context,
+                        listen: false,
+                      );
                       final success = await provider.createMedication(
                         nombre: nombreCtrl.text.trim(),
                         dosis: dosisCtrl.text.trim(),
-                        frecuenciaHoras: int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
+                        indicaciones: indicacionesCtrl.text.trim().isNotEmpty
+                            ? indicacionesCtrl.text.trim()
+                            : null,
+                        frecuenciaHoras:
+                            int.tryParse(frecuenciaCtrl.text.trim()) ?? 12,
                         horaInicio: horaCtrl.text.trim(),
                         stockActual: int.tryParse(stockCtrl.text.trim()) ?? 30,
-                        stockMinimoAlerta: int.tryParse(stockMinCtrl.text.trim()) ?? 5,
+                        stockMinimoAlerta:
+                            int.tryParse(stockMinCtrl.text.trim()) ?? 5,
                       );
                       if (!mounted) return;
                       if (success) {
                         AudioFeedback.playSuccess();
                         if (ctx.mounted) Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Medicamento guardado en el pastillero')),
+                        InAppNotificationService().show(
+                          title: 'Medicamento guardado',
+                          message:
+                              'Se agregó ${nombreCtrl.text.trim()} al pastillero.',
+                          type: TopNotificationType.info,
+                          duration: const Duration(seconds: 3),
+                        );
+                      } else {
+                        InAppNotificationService().show(
+                          title: 'No se pudo guardar',
+                          message:
+                              provider.errorMessage ??
+                              'Inténtalo de nuevo cuando haya conexión.',
+                          type: TopNotificationType.sosAlert,
+                          duration: const Duration(seconds: 4),
                         );
                       }
                     },
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentOrange),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentOrange,
+                    ),
                     child: const Text('GUARDAR MEDICAMENTO'),
                   ),
                 ],
@@ -407,8 +633,11 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     final direccionCtrl = TextEditingController();
     final notasCtrl = TextEditingController();
 
-    DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
-    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+    final ahora = DateFormatter.nowColombia();
+    DateTime selectedDate = ahora;
+    TimeOfDay selectedTime = TimeOfDay.fromDateTime(
+      ahora.add(const Duration(minutes: 30)),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -419,7 +648,8 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
-            final dateStr = '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+            final dateStr =
+                '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
             final timeStr = selectedTime.format(context);
 
             return Padding(
@@ -439,7 +669,11 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.calendar_month_rounded, color: AppColors.morningBlue, size: 26),
+                            const Icon(
+                              Icons.calendar_month_rounded,
+                              color: AppColors.morningBlue,
+                              size: 26,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               'Recordatorio de Cita',
@@ -476,7 +710,8 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       controller: lugarCtrl,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: const InputDecoration(
-                        labelText: 'Centro Médico / Hospital (ej. Clínica Central)',
+                        labelText:
+                            'Centro Médico / Hospital (ej. Clínica Central)',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -485,7 +720,8 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                       controller: direccionCtrl,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: const InputDecoration(
-                        labelText: 'Dirección o consultorio (ej. Calle 10 # 5-20)',
+                        labelText:
+                            'Dirección o consultorio (ej. Calle 10 # 5-20)',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -499,8 +735,10 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               final pickedDate = await showDatePicker(
                                 context: modalCtx,
                                 initialDate: selectedDate,
-                                firstDate: DateTime.now(),
-                                lastDate: DateTime.now().add(const Duration(days: 365)),
+                                firstDate: DateFormatter.nowColombia(),
+                                lastDate: DateFormatter.nowColombia().add(
+                                  const Duration(days: 365),
+                                ),
                               );
                               if (pickedDate != null) {
                                 setModalState(() => selectedDate = pickedDate);
@@ -510,9 +748,17 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               decoration: const InputDecoration(
                                 labelText: 'Fecha',
                                 border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.event_rounded, color: AppColors.morningBlue),
+                                prefixIcon: Icon(
+                                  Icons.event_rounded,
+                                  color: AppColors.morningBlue,
+                                ),
                               ),
-                              child: Text(dateStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              child: Text(
+                                dateStr,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -526,7 +772,8 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                                 initialTime: selectedTime,
                                 builder: (context, child) {
                                   return MediaQuery(
-                                    data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+                                    data: MediaQuery.of(context)
+                                        .copyWith(alwaysUse24HourFormat: false),
                                     child: child!,
                                   );
                                 },
@@ -539,9 +786,17 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               decoration: const InputDecoration(
                                 labelText: 'Hora',
                                 border: OutlineInputBorder(),
-                                prefixIcon: Icon(Icons.access_time_rounded, color: AppColors.morningBlue),
+                                prefixIcon: Icon(
+                                  Icons.access_time_rounded,
+                                  color: AppColors.morningBlue,
+                                ),
                               ),
-                              child: Text(timeStr, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              child: Text(
+                                timeStr,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -563,55 +818,86 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                         if (especialidadCtrl.text.trim().isEmpty) return;
 
                         // Validación: No permitir citas en fechas u horas pasadas
-                        final fechaHoraCita = DateTime(
+                        final fechaHoraCita = DateTime.utc(
                           selectedDate.year,
                           selectedDate.month,
                           selectedDate.day,
                           selectedTime.hour,
                           selectedTime.minute,
                         );
-                        if (fechaHoraCita.isBefore(DateTime.now())) {
+                        if (!fechaHoraCita.isAfter(
+                          DateFormatter.nowColombia(),
+                        )) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             const SnackBar(
-                              content: Text('La fecha y hora de la cita no puede ser en el pasado.'),
+                              content: Text(
+                                'La fecha y hora de la cita no puede ser en el pasado.',
+                              ),
                               backgroundColor: AppColors.sosRed,
                             ),
                           );
                           return;
                         }
 
-                        final h = selectedTime.hour.toString().padLeft(2, '0');
-                        final m = selectedTime.minute.toString().padLeft(2, '0');
-                        final fechaHoraIso = '${dateStr}T$h:$m:00';
+                        final fechaHoraIso = DateFormatter.toColombiaIsoString(
+                          fechaHoraCita,
+                        );
 
-                        final messenger = ScaffoldMessenger.of(context);
-                        final healthProvider = Provider.of<HealthProvider>(context, listen: false);
+                        final healthProvider = Provider.of<HealthProvider>(
+                          context,
+                          listen: false,
+                        );
                         final ok = await healthProvider.createAppointment(
                           especialidad: especialidadCtrl.text.trim(),
-                          medico: medicoCtrl.text.trim().isNotEmpty ? medicoCtrl.text.trim() : null,
-                          lugar: lugarCtrl.text.trim().isNotEmpty ? lugarCtrl.text.trim() : null,
-                          direccion: direccionCtrl.text.trim().isNotEmpty ? direccionCtrl.text.trim() : null,
+                          medico: medicoCtrl.text.trim().isNotEmpty
+                              ? medicoCtrl.text.trim()
+                              : null,
+                          lugar: lugarCtrl.text.trim().isNotEmpty
+                              ? lugarCtrl.text.trim()
+                              : null,
+                          direccion: direccionCtrl.text.trim().isNotEmpty
+                              ? direccionCtrl.text.trim()
+                              : null,
                           fechaHoraIso: fechaHoraIso,
-                          notas: notasCtrl.text.trim().isNotEmpty ? notasCtrl.text.trim() : null,
+                          notas: notasCtrl.text.trim().isNotEmpty
+                              ? notasCtrl.text.trim()
+                              : null,
                         );
                         if (!mounted) return;
                         if (ok) {
                           AudioFeedback.playSuccess();
                           if (ctx.mounted) Navigator.pop(ctx);
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('Recordatorio de cita médica guardado correctamente'),
-                              backgroundColor: AppColors.morningBlue,
-                            ),
+                          InAppNotificationService().show(
+                            title: 'Recordatorio guardado',
+                            message: 'Se programó el recordatorio de la cita médica.',
+                            type: TopNotificationType.info,
+                            duration: const Duration(seconds: 3),
+                          );
+                        } else {
+                          InAppNotificationService().show(
+                            title: 'No se pudo guardar',
+                            message:
+                                healthProvider.errorMessage ??
+                                'Inténtalo de nuevo cuando haya conexión.',
+                            type: TopNotificationType.sosAlert,
+                            duration: const Duration(seconds: 4),
                           );
                         }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.morningBlue,
                         minimumSize: const Size(double.infinity, 48),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
-                      child: const Text('GUARDAR RECORDATORIO', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      child: const Text(
+                        'GUARDAR RECORDATORIO',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -625,14 +911,33 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
 
   bool _puedeConfirmarCita(String fechaHoraStr) {
     try {
-      final fechaCita = DateTime.parse(fechaHoraStr).toLocal();
-      final ahora = DateTime.now();
-      // Se permite confirmar a partir de 2.5 horas antes de la cita
+      final fechaCita = DateFormatter.tryParseColombiaDateTime(fechaHoraStr);
+      if (fechaCita == null) return false;
+      final ahora = DateFormatter.nowColombia();
       final diferenciaMinutos = fechaCita.difference(ahora).inMinutes;
-      return diferenciaMinutos <= 150;
+      return diferenciaMinutos <= 150 && diferenciaMinutos >= -120;
     } catch (_) {
-      return true;
+      return false;
     }
+  }
+
+  String _mensajeCitaNoConfirmable(String fechaHoraStr) {
+    try {
+      final fechaCita = DateFormatter.tryParseColombiaDateTime(fechaHoraStr);
+      if (fechaCita == null) {
+        return 'No se pudo validar la hora de la cita.';
+      }
+      final ahora = DateFormatter.nowColombia();
+      if (ahora.isBefore(fechaCita.subtract(const Duration(minutes: 150)))) {
+        return 'Se habilitará 2 horas y media antes de la cita.';
+      }
+      if (ahora.isAfter(fechaCita.add(const Duration(hours: 2)))) {
+        return 'El plazo para confirmar esta cita finalizó.';
+      }
+    } catch (_) {
+      return 'No se pudo validar la hora de la cita.';
+    }
+    return 'La confirmación está disponible para esta cita.';
   }
 
   @override
@@ -653,7 +958,10 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   onRefresh: () async {
                     await medProvider.fetchMedicationsData();
                     if (!context.mounted) return;
-                    await Provider.of<HealthProvider>(context, listen: false).fetchHealthData();
+                    await Provider.of<HealthProvider>(
+                      context,
+                      listen: false,
+                    ).fetchHealthData();
                   },
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -674,14 +982,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                                 letterSpacing: 1.1,
                               ),
                             ),
                             IconButton(
                               onPressed: _showAddMedicationModal,
                               tooltip: 'Añadir Medicamento',
-                              icon: const Icon(Icons.add_circle_rounded, color: AppColors.primaryBlue, size: 28),
+                              icon: const Icon(
+                                Icons.add_circle_rounded,
+                                color: AppColors.primaryBlue,
+                                size: 28,
+                              ),
                             ),
                           ],
                         ),
@@ -692,13 +1006,33 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                              _buildFilterChip('Todos', 'Todos', medProvider, isDark),
+                              _buildFilterChip(
+                                'Todos',
+                                'Todos',
+                                medProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Mañana', 'Mañana', medProvider, isDark),
+                              _buildFilterChip(
+                                'Mañana',
+                                'Mañana',
+                                medProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Tarde', 'Tarde', medProvider, isDark),
+                              _buildFilterChip(
+                                'Tarde',
+                                'Tarde',
+                                medProvider,
+                                isDark,
+                              ),
                               const SizedBox(width: 8),
-                              _buildFilterChip('Noche', 'Noche', medProvider, isDark),
+                              _buildFilterChip(
+                                'Noche',
+                                'Noche',
+                                medProvider,
+                                isDark,
+                              ),
                             ],
                           ),
                         ),
@@ -712,14 +1046,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                             decoration: BoxDecoration(
                               color: isDark ? AppColors.cardDark : Colors.white,
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+                              border: Border.all(
+                                color: isDark
+                                    ? AppColors.borderDark
+                                    : AppColors.borderLight,
+                              ),
                             ),
                             child: Column(
                               children: [
                                 Icon(
                                   Icons.medication_liquid_rounded,
                                   size: 44,
-                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondaryLight,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -727,7 +1067,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
-                                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                                    color: isDark
+                                        ? AppColors.textPrimaryDark
+                                        : AppColors.textPrimaryLight,
                                   ),
                                 ),
                               ],
@@ -738,10 +1080,15 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                             shrinkWrap: true,
                             physics: const NeverScrollableScrollPhysics(),
                             itemCount: meds.length,
-                            separatorBuilder: (ctx, i) => const SizedBox(height: 12),
+                            separatorBuilder: (ctx, i) =>
+                                const SizedBox(height: 12),
                             itemBuilder: (ctx, idx) {
                               final m = meds[idx];
-                              return _buildMedicationListItem(m, medProvider, isDark);
+                              return _buildMedicationListItem(
+                                m,
+                                medProvider,
+                                isDark,
+                              );
                             },
                           ),
 
@@ -760,7 +1107,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
 
   Widget _buildAppointmentsSection(BuildContext context, bool isDark) {
     final healthProvider = Provider.of<HealthProvider>(context);
-    final appointments = healthProvider.appointments.where((a) => a.activo).toList();
+    final appointments = healthProvider.appointments
+        .where((a) => a.activo)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,14 +1119,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
           children: [
             Row(
               children: [
-                const Icon(Icons.calendar_month_rounded, color: AppColors.morningBlue, size: 22),
+                const Icon(
+                  Icons.calendar_month_rounded,
+                  color: AppColors.morningBlue,
+                  size: 22,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   'PRÓXIMAS CITAS MÉDICAS',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                     letterSpacing: 1.1,
                   ),
                 ),
@@ -786,12 +1141,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.morningBlue, size: 24),
+                  icon: const Icon(
+                    Icons.add_circle_outline_rounded,
+                    color: AppColors.morningBlue,
+                    size: 24,
+                  ),
                   tooltip: 'Agregar Recordatorio de Cita',
                   onPressed: () => _showCrearCitaModal(context),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.refresh_rounded, size: 20, color: AppColors.morningBlue),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    size: 20,
+                    color: AppColors.morningBlue,
+                  ),
                   tooltip: 'Actualizar',
                   onPressed: () => healthProvider.fetchHealthData(),
                 ),
@@ -807,7 +1170,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             decoration: BoxDecoration(
               color: isDark ? AppColors.cardDark : Colors.white,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+              border: Border.all(
+                color: isDark ? AppColors.borderDark : AppColors.borderLight,
+              ),
             ),
             child: Row(
               children: [
@@ -817,7 +1182,11 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     color: AppColors.morningBlue.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.event_available_rounded, color: AppColors.morningBlue, size: 24),
+                  child: const Icon(
+                    Icons.event_available_rounded,
+                    color: AppColors.morningBlue,
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -825,7 +1194,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     'No tienes citas médicas programadas por ahora.',
                     style: TextStyle(
                       fontSize: 14,
-                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
                     ),
                   ),
                 ),
@@ -841,25 +1212,25 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             itemBuilder: (ctx, idx) {
               final cita = appointments[idx];
               String fechaHoraFormateada = cita.fechaHora;
-              try {
-                final dt = DateTime.parse(cita.fechaHora).toLocal();
-                final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-                final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-                final min = dt.minute.toString().padLeft(2, '0');
-                final dia = dt.day.toString().padLeft(2, '0');
-                final mes = dt.month.toString().padLeft(2, '0');
-                fechaHoraFormateada = '$dia/$mes/${dt.year} • $hour:$min $ampm';
-              } catch (_) {}
+              final dt = DateFormatter.tryParseColombiaDateTime(cita.fechaHora);
+              if (dt != null) {
+                fechaHoraFormateada = DateFormatter.formatColombiaDateTime(dt);
+              }
 
               return Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: isDark ? AppColors.cardDark : Colors.white,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.morningBlue.withValues(alpha: 0.4), width: 1.5),
+                  border: Border.all(
+                    color: AppColors.morningBlue.withValues(alpha: 0.4),
+                    width: 1.5,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.03),
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.15 : 0.03,
+                      ),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -871,149 +1242,229 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppColors.morningBlue.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(12),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppColors.morningBlue.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.medical_services_rounded,
+                                  color: AppColors.morningBlue,
+                                  size: 20,
+                                ),
                               ),
-                              child: const Icon(Icons.medical_services_rounded, color: AppColors.morningBlue, size: 20),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              cita.especialidad,
-                              style: GoogleFonts.outfit(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  cita.especialidad,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark
+                                        ? AppColors.textPrimaryDark
+                                        : AppColors.textPrimaryLight,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: cita.estado == 'asistida'
                                 ? AppColors.successGreen.withValues(alpha: 0.15)
                                 : cita.estado == 'no_asistida'
-                                    ? AppColors.sosRed.withValues(alpha: 0.15)
-                                    : cita.estado == 'sin_confirmar'
-                                        ? AppColors.afternoonOrange.withValues(alpha: 0.15)
-                                        : AppColors.morningBlue.withValues(alpha: 0.12),
+                                ? AppColors.sosRed.withValues(alpha: 0.15)
+                                : cita.estado == 'sin_confirmar'
+                                ? AppColors.afternoonOrange.withValues(
+                                    alpha: 0.15,
+                                  )
+                                : AppColors.morningBlue.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             cita.estado == 'asistida'
                                 ? 'Asistí ✓'
                                 : cita.estado == 'no_asistida'
-                                    ? 'No asistí'
-                                    : cita.estado == 'sin_confirmar'
-                                        ? 'Sin confirmar'
-                                        : 'Programada',
+                                ? 'No asistí'
+                                : cita.estado == 'sin_confirmar'
+                                ? 'Sin confirmar'
+                                : 'Programada',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: cita.estado == 'asistida'
                                   ? AppColors.successGreen
                                   : cita.estado == 'no_asistida'
-                                      ? AppColors.sosRed
-                                      : cita.estado == 'sin_confirmar'
-                                          ? AppColors.afternoonOrange
-                                          : AppColors.morningBlue,
+                                  ? AppColors.sosRed
+                                  : cita.estado == 'sin_confirmar'
+                                  ? AppColors.afternoonOrange
+                                  : AppColors.morningBlue,
                             ),
                           ),
                         ),
+                        if (cita.estado == 'programada' ||
+                            cita.estado == 'sin_confirmar')
+                          PopupMenuButton<String>(
+                            tooltip: 'Opciones de la cita',
+                            onSelected: (action) {
+                              if (action == 'edit') {
+                                _editAppointment(cita);
+                              } else {
+                                _cancelAppointment(cita);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Editar recordatorio'),
+                              ),
+                              PopupMenuItem(
+                                value: 'cancel',
+                                child: Text('Cancelar cita'),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        const Icon(Icons.access_time_rounded, size: 16, color: AppColors.textSecondary),
+                        const Icon(
+                          Icons.access_time_rounded,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           fechaHoraFormateada,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
                           ),
                         ),
                       ],
                     ),
-                    if (cita.lugar != null && cita.lugar!.trim().isNotEmpty) ...[
+                    if (cita.lugar != null &&
+                        cita.lugar!.trim().isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          const Icon(Icons.local_hospital_rounded, size: 16, color: AppColors.morningBlue),
+                          const Icon(
+                            Icons.local_hospital_rounded,
+                            size: 16,
+                            color: AppColors.morningBlue,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Lugar: ${cita.lugar}',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ],
-                    if (cita.direccion != null && cita.direccion!.trim().isNotEmpty) ...[
+                    if (cita.direccion != null &&
+                        cita.direccion!.trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_rounded, size: 16, color: AppColors.sosRed),
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 16,
+                            color: AppColors.sosRed,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Dirección: ${cita.direccion}',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ],
-                    if (cita.medico != null && cita.medico!.trim().isNotEmpty) ...[
+                    if (cita.medico != null &&
+                        cita.medico!.trim().isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.person_pin_rounded, size: 16, color: AppColors.primaryBlue),
+                          const Icon(
+                            Icons.person_pin_rounded,
+                            size: 16,
+                            color: AppColors.primaryBlue,
+                          ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Médico: ${cita.medico}',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ],
-                    if (cita.notas != null && cita.notas!.trim().isNotEmpty) ...[
+                    if (cita.notas != null &&
+                        cita.notas!.trim().isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                          color: isDark
+                              ? const Color(0xFF1E293B)
+                              : const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline_rounded, size: 14, color: AppColors.primaryBlue),
+                            const Icon(
+                              Icons.info_outline_rounded,
+                              size: 14,
+                              color: AppColors.primaryBlue,
+                            ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
                                 'Indicaciones: ${cita.notas}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondaryLight,
                                 ),
                               ),
                             ),
@@ -1023,33 +1474,60 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     ],
                     const SizedBox(height: 12),
                     // BOTONES DE ASISTENCIA A LA CITA MÉDICA
-                    if ((cita.estado == 'programada' || cita.estado == 'sin_confirmar') && _puedeConfirmarCita(cita.fechaHora))
+                    if ((cita.estado == 'programada' ||
+                            cita.estado == 'sin_confirmar') &&
+                        _puedeConfirmarCita(cita.fechaHora))
                       Row(
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
                               onPressed: () async {
-                                AudioFeedback.playConfirmation();
-                                await healthProvider.updateAppointmentStatus(cita.id, 'asistida');
-                                // Cancelar notificación local para que deje de sonar/aparecer
-                                await NotificationService().cancelarNotificacionLocal(cita.id.hashCode);
+                                final ok = await healthProvider
+                                    .updateAppointmentStatus(
+                                      cita.id,
+                                      'asistida',
+                                    );
                                 if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('¡Excelente! Marcaste tu asistencia a la cita.'),
-                                    backgroundColor: AppColors.successGreen,
-                                  ),
-                                );
+                                if (ok) {
+                                  AudioFeedback.playConfirmation();
+                                  await NotificationService()
+                                      .checkPendingNotifications();
+                                  InAppNotificationService().show(
+                                    title: 'Asistencia registrada',
+                                    message:
+                                        'Marcaste que asististe a la cita.',
+                                    type: TopNotificationType.info,
+                                    duration: const Duration(seconds: 3),
+                                  );
+                                } else {
+                                  InAppNotificationService().show(
+                                    title: 'No se pudo actualizar',
+                                    message: healthProvider.errorMessage ?? 'Inténtalo de nuevo cuando haya conexión.',
+                                    type: TopNotificationType.sosAlert,
+                                    duration: const Duration(seconds: 4),
+                                  );
+                                }
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.successGreen,
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
-                              icon: const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 18),
+                              icon: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
                               label: const Text(
                                 'ASISTÍ',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ),
@@ -1057,61 +1535,102 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () async {
-                                AudioFeedback.playSuccess();
-                                await healthProvider.updateAppointmentStatus(cita.id, 'no_asistida');
-                                await NotificationService().cancelarNotificacionLocal(cita.id.hashCode);
+                                final ok = await healthProvider
+                                    .updateAppointmentStatus(
+                                      cita.id,
+                                      'no_asistida',
+                                    );
                                 if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Cita médica marcada como no asistida.'),
-                                  ),
-                                );
+                                if (ok) {
+                                  AudioFeedback.playSuccess();
+                                  await NotificationService()
+                                      .checkPendingNotifications();
+                                  InAppNotificationService().show(
+                                    title: 'Estado registrado',
+                                    message:
+                                        'Marcaste que no asististe a la cita.',
+                                    type: TopNotificationType.info,
+                                    duration: const Duration(seconds: 3),
+                                  );
+                                } else {
+                                  InAppNotificationService().show(
+                                    title: 'No se pudo actualizar',
+                                    message: healthProvider.errorMessage ?? 'Inténtalo de nuevo cuando haya conexión.',
+                                    type: TopNotificationType.sosAlert,
+                                    duration: const Duration(seconds: 4),
+                                  );
+                                }
                               },
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 side: BorderSide(
-                                  color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                                  color: isDark
+                                      ? AppColors.borderDark
+                                      : AppColors.borderLight,
                                 ),
                               ),
                               icon: Icon(
                                 Icons.close_rounded,
                                 size: 18,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                               ),
                               label: Text(
                                 'NO ASISTÍ',
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
-                                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondaryLight,
                                 ),
                               ),
                             ),
                           ),
                         ],
                       )
-                    else if ((cita.estado == 'programada' || cita.estado == 'sin_confirmar') && !_puedeConfirmarCita(cita.fechaHora))
+                    else if ((cita.estado == 'programada' ||
+                            cita.estado == 'sin_confirmar') &&
+                        !_puedeConfirmarCita(cita.fechaHora))
                       Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 6,
+                          horizontal: 10,
+                        ),
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
+                          color: isDark
+                              ? Colors.white10
+                              : Colors.black.withValues(alpha: 0.04),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.lock_clock_rounded, size: 16, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                            Icon(
+                              Icons.lock_clock_rounded,
+                              size: 16,
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight,
+                            ),
                             const SizedBox(width: 6),
                             Text(
-                              'Se habilitará para confirmar el día de la cita.',
+                              _mensajeCitaNoConfirmable(cita.fechaHora),
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
                               ),
                             ),
                           ],
                         ),
-                      )
+                      ),
                   ],
                 ),
               );
@@ -1123,14 +1642,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
 
   final Set<String> _submittingDoses = {};
 
-  Widget _buildHeroCard(Map<String, dynamic>? proximo, MedicationProvider provider, bool isDark) {
+  Widget _buildHeroCard(
+    Map<String, dynamic>? proximo,
+    MedicationProvider provider,
+    bool isDark,
+  ) {
     if (provider.medications.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         decoration: BoxDecoration(
           color: isDark ? AppColors.cardDark : Colors.white,
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+          border: Border.all(
+            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.04),
@@ -1144,10 +1669,16 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                color: isDark
+                    ? const Color(0xFF1E293B)
+                    : const Color(0xFFEFF6FF),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.medication_outlined, color: AppColors.primaryBlue, size: 36),
+              child: const Icon(
+                Icons.medication_outlined,
+                color: AppColors.primaryBlue,
+                size: 36,
+              ),
             ),
             const SizedBox(height: 12),
             Text(
@@ -1155,7 +1686,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
               style: GoogleFonts.outfit(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
             const SizedBox(height: 6),
@@ -1164,7 +1697,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             ),
           ],
@@ -1185,7 +1720,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
               letterSpacing: 1.1,
             ),
           ),
@@ -1198,38 +1735,55 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
           itemBuilder: (ctx, idx) {
             final med = medications[idx];
             final medId = med.id.toString();
-            final isTaken = provider.isDoseTakenRecently(medId, frecuenciaHoras: med.frecuenciaHoras);
             final lastToma = provider.getUltimaToma(medId);
+            final nextDose = provider.nextDoseAt(med);
+            final isDoseRegistered = provider.isDoseRegisteredRecently(
+              medId,
+              frecuenciaHoras: med.frecuenciaHoras,
+            );
+            final isTaken =
+                isDoseRegistered && lastToma?.estado.toLowerCase() == 'tomado';
 
             String lastHoraStr = 'hoy';
             if (lastToma?.fechaHoraConfirmacion != null) {
               try {
-                final dt = DateTime.parse(lastToma!.fechaHoraConfirmacion!).toLocal();
-                final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-                final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-                final min = dt.minute.toString().padLeft(2, '0');
-                lastHoraStr = '$hour:$min $ampm';
+                final dt = DateFormatter.tryParseColombiaDateTime(
+                  lastToma!.fechaHoraConfirmacion!,
+                );
+                if (dt != null) {
+                  lastHoraStr = DateFormatter.formatColombiaTime(dt);
+                }
               } catch (_) {}
             }
 
-            final nowHour = DateTime.now().hour;
+            final nowHour = DateFormatter.nowColombia().hour;
             final Color scheduleColor = (nowHour >= 5 && nowHour < 12)
                 ? AppColors.morningBlue
                 : (nowHour >= 12 && nowHour < 18)
-                    ? AppColors.afternoonOrange
-                    : AppColors.nightIndigo;
+                ? AppColors.afternoonOrange
+                : AppColors.nightIndigo;
 
-            final isOmitido = lastToma?.estado.toLowerCase() == 'omitido' && provider.isDoseTakenRecently(medId, frecuenciaHoras: med.frecuenciaHoras);
+            final isOmitido =
+                isDoseRegistered && lastToma?.estado.toLowerCase() == 'omitido';
 
             if (isTaken || isOmitido) {
               final isSuccess = isTaken;
-              final Color badgeColor = isSuccess ? AppColors.successGreen : AppColors.sosRed;
+              final Color badgeColor = isSuccess
+                  ? AppColors.successGreen
+                  : AppColors.sosRed;
               final Color bgContainer = isSuccess
-                  ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFF0FDF4))
-                  : (isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.4) : const Color(0xFFFEF2F2));
+                  ? (isDark
+                        ? const Color(0xFF064E3B).withValues(alpha: 0.5)
+                        : const Color(0xFFF0FDF4))
+                  : (isDark
+                        ? const Color(0xFF7F1D1D).withValues(alpha: 0.4)
+                        : const Color(0xFFFEF2F2));
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 16,
+                ),
                 decoration: BoxDecoration(
                   color: bgContainer,
                   borderRadius: BorderRadius.circular(20),
@@ -1260,8 +1814,12 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                               fontSize: 17,
                               fontWeight: FontWeight.bold,
                               color: isSuccess
-                                  ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF166534))
-                                  : (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B)),
+                                  ? (isDark
+                                        ? const Color(0xFF6EE7B7)
+                                        : const Color(0xFF166534))
+                                  : (isDark
+                                        ? const Color(0xFFFCA5A5)
+                                        : const Color(0xFF991B1B)),
                             ),
                           ),
                           Text(
@@ -1271,10 +1829,24 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                             style: TextStyle(
                               fontSize: 13,
                               color: isSuccess
-                                  ? (isDark ? const Color(0xFFA7F3D0) : const Color(0xFF15803D))
-                                  : (isDark ? const Color(0xFFFECACA) : const Color(0xFFB91C1C)),
+                                  ? (isDark
+                                        ? const Color(0xFFA7F3D0)
+                                        : const Color(0xFF15803D))
+                                  : (isDark
+                                        ? const Color(0xFFFECACA)
+                                        : const Color(0xFFB91C1C)),
                             ),
                           ),
+                          if (nextDose != null)
+                            Text(
+                              'Próxima dosis: ${DateFormatter.formatColombiaDateTime(nextDose)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1288,10 +1860,15 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
               decoration: BoxDecoration(
                 color: isDark ? AppColors.cardDark : Colors.white,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: scheduleColor.withValues(alpha: 0.6), width: 1.5),
+                border: Border.all(
+                  color: scheduleColor.withValues(alpha: 0.6),
+                  width: 1.5,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: scheduleColor.withValues(alpha: isDark ? 0.08 : 0.06),
+                    color: scheduleColor.withValues(
+                      alpha: isDark ? 0.08 : 0.06,
+                    ),
                     blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
@@ -1309,14 +1886,19 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                           style: GoogleFonts.outfit(
                             fontSize: 20,
                             fontWeight: FontWeight.w800,
-                            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight,
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: scheduleColor.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
@@ -1337,10 +1919,36 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     '${med.dosis ?? "1 dosis"} • Cada ${med.frecuenciaHoras} hrs • Stock: ${med.stockActual}',
                     style: TextStyle(
                       fontSize: 14,
-                      color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
                     ),
                   ),
-                  if (med.indicaciones != null && med.indicaciones!.isNotEmpty) ...[
+                  if (nextDose != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.schedule_rounded,
+                          size: 15,
+                          color: AppColors.morningBlue,
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'Próxima dosis: ${DateFormatter.formatColombiaDateTime(nextDose)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.morningBlue,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (med.indicaciones != null &&
+                      med.indicaciones!.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(
                       'Indicaciones: ${med.indicaciones!}',
@@ -1356,47 +1964,73 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: (_submittingDoses.contains(medId) || med.stockActual <= 0)
+                          onPressed:
+                              (_submittingDoses.contains(medId) ||
+                                  med.stockActual <= 0)
                               ? null
                               : () async {
                                   setState(() => _submittingDoses.add(medId));
-                                  AudioFeedback.playConfirmation();
-                                  final ok = await provider.registrarToma(medId, 'tomado');
+                                  final ok = await provider.registrarToma(
+                                    medId,
+                                    'tomado',
+                                  );
                                   if (!mounted) return;
-                                  setState(() => _submittingDoses.remove(medId));
+                                  setState(
+                                    () => _submittingDoses.remove(medId),
+                                  );
                                   if (ok) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Dosis confirmada: ${med.nombre}'),
-                                        backgroundColor: AppColors.successGreen,
-                                      ),
+                                    AudioFeedback.playConfirmation();
+                                    InAppNotificationService().show(
+                                      title: 'Toma registrada',
+                                      message:
+                                          'Marcaste como tomada: ${med.nombre}.',
+                                      type: TopNotificationType.info,
+                                      duration: const Duration(seconds: 3),
                                     );
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(provider.errorMessage ?? 'No se pudo registrar la toma.'),
-                                        backgroundColor: AppColors.sosRed,
-                                      ),
+                                    InAppNotificationService().show(
+                                      title: 'No se pudo registrar',
+                                      message:
+                                          provider.errorMessage ??
+                                          'No se pudo registrar la toma.',
+                                      type: TopNotificationType.sosAlert,
+                                      duration: const Duration(seconds: 4),
                                     );
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: med.stockActual <= 0 ? Colors.grey : AppColors.successGreen,
+                            backgroundColor: med.stockActual <= 0
+                                ? Colors.grey
+                                : AppColors.successGreen,
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
                           icon: _submittingDoses.contains(medId)
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
                                 )
-                              : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                              : const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
                           label: Text(
                             _submittingDoses.contains(medId)
                                 ? 'REGISTRANDO...'
-                                : (med.stockActual <= 0 ? 'SIN STOCK' : 'YA LA TOMÉ'),
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                                : (med.stockActual <= 0
+                                      ? 'SIN STOCK'
+                                      : 'YA LA TOMÉ'),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -1406,37 +2040,59 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                             ? null
                             : () async {
                                 setState(() => _submittingDoses.add(medId));
-                                AudioFeedback.playSuccess();
-                                final ok = await provider.registrarToma(medId, 'omitido');
+                                final ok = await provider.registrarToma(
+                                  medId,
+                                  'omitido',
+                                );
                                 if (!mounted) return;
                                 setState(() => _submittingDoses.remove(medId));
                                 if (ok) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Dosis marcada como no tomada: ${med.nombre}'),
-                                      backgroundColor: isDark ? AppColors.cardDark : Colors.grey[700],
-                                    ),
+                                  AudioFeedback.playSuccess();
+                                  InAppNotificationService().show(
+                                    title: 'Dosis registrada',
+                                    message:
+                                        'Marcaste como no tomada: ${med.nombre}.',
+                                    type: TopNotificationType.info,
+                                    duration: const Duration(seconds: 3),
+                                  );
+                                } else {
+                                  InAppNotificationService().show(
+                                    title: 'No se pudo registrar',
+                                    message: provider.errorMessage ?? 'No se pudo actualizar el estado de la dosis.',
+                                    type: TopNotificationType.sosAlert,
+                                    duration: const Duration(seconds: 4),
                                   );
                                 }
                               },
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                            horizontal: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           side: BorderSide(
-                            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+                            color: isDark
+                                ? AppColors.borderDark
+                                : AppColors.borderLight,
                           ),
                         ),
                         icon: Icon(
                           Icons.close_rounded,
                           size: 18,
-                          color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondaryLight,
                         ),
                         label: Text(
                           'NO LA TOMÉ',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight,
                           ),
                         ),
                       ),
@@ -1451,14 +2107,21 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     );
   }
 
-  Widget _buildFilterChip(String key, String label, MedicationProvider provider, bool isDark) {
+  Widget _buildFilterChip(
+    String key,
+    String label,
+    MedicationProvider provider,
+    bool isDark,
+  ) {
     final isSelected = provider.selectedFilter == key;
     return GestureDetector(
       onTap: () => provider.setFilter(key),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primaryBlue : (isDark ? AppColors.cardDark : Colors.white),
+          color: isSelected
+              ? AppColors.primaryBlue
+              : (isDark ? AppColors.cardDark : Colors.white),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected
@@ -1473,7 +2136,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
             style: TextStyle(
               color: isSelected
                   ? Colors.white
-                  : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight),
+                  : (isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight),
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),
@@ -1483,7 +2148,11 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
     );
   }
 
-  Widget _buildMedicationListItem(dynamic m, MedicationProvider provider, bool isDark) {
+  Widget _buildMedicationListItem(
+    dynamic m,
+    MedicationProvider provider,
+    bool isDark,
+  ) {
     final hora = DateFormatter.formatTimeString(m.horaInicio);
     final dosisTxt = m.dosis ?? '1 tableta';
     final stock = m.stockActual;
@@ -1527,7 +2196,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.bold,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -1535,7 +2206,9 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                   '$hora • $dosisTxt',
                   style: TextStyle(
                     fontSize: 13,
-                    color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1544,15 +2217,25 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                     Icon(
                       Icons.inventory_2_outlined,
                       size: 14,
-                      color: isLowStock ? AppColors.sosRed : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                      color: isLowStock
+                          ? AppColors.sosRed
+                          : (isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       'Stock: $stock pastillas ${isLowStock ? "(¡Stock Bajo!)" : ""}',
                       style: TextStyle(
                         fontSize: 12,
-                        fontWeight: isLowStock ? FontWeight.bold : FontWeight.w500,
-                        color: isLowStock ? AppColors.sosRed : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight),
+                        fontWeight: isLowStock
+                            ? FontWeight.bold
+                            : FontWeight.w500,
+                        color: isLowStock
+                            ? AppColors.sosRed
+                            : (isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight),
                       ),
                     ),
                   ],
@@ -1563,10 +2246,14 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
           PopupMenuButton<String>(
             icon: Icon(
               Icons.more_vert_rounded,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
               size: 24,
             ),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             color: isDark ? AppColors.cardDark : Colors.white,
             onSelected: (val) {
               if (val == 'edit') {
@@ -1580,14 +2267,20 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                 value: 'edit',
                 child: Row(
                   children: [
-                    const Icon(Icons.edit_rounded, size: 20, color: AppColors.primaryBlue),
+                    const Icon(
+                      Icons.edit_rounded,
+                      size: 20,
+                      color: AppColors.primaryBlue,
+                    ),
                     const SizedBox(width: 10),
                     Text(
                       'Editar dosis / stock',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
                       ),
                     ),
                   ],
@@ -1597,11 +2290,19 @@ class _UnifiedHomeDashboardScreenState extends State<UnifiedHomeDashboardScreen>
                 value: 'delete',
                 child: const Row(
                   children: [
-                    Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.sosRed),
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 20,
+                      color: AppColors.sosRed,
+                    ),
                     SizedBox(width: 10),
                     Text(
                       'Eliminar pastilla',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.sosRed),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.sosRed,
+                      ),
                     ),
                   ],
                 ),

@@ -148,8 +148,33 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> vincularPorCodigo(String codigo) async {
     try {
       await _repository.vincularPorCodigo(codigo);
-      // Refresh user profile after linking
       _user = await _repository.getProfile();
+      await _storageService.saveUserData(
+        userId: _user!.id,
+        name: _user!.nombres,
+        role: _user!.rol,
+        emergencyContact: _user!.contactoEmergenciaNombre,
+      );
+      _errorMessage = null;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> refreshProfile() async {
+    try {
+      _user = await _repository.getProfile();
+      await _storageService.saveUserData(
+        userId: _user!.id,
+        name: _user!.nombres,
+        role: _user!.rol,
+        emergencyContact: _user!.contactoEmergenciaNombre,
+      );
+      _errorMessage = null;
       notifyListeners();
       return true;
     } catch (e) {

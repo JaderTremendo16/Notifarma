@@ -1,9 +1,9 @@
 # app/schemas/medication_schema.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer, field_validator
 from typing import Optional, List
 from uuid import UUID
-from datetime import datetime, date, time
+from datetime import datetime, date, time, timezone
 from app.models.medication_model import EstadoToma
 
 
@@ -20,6 +20,20 @@ class MedicamentoCreate(BaseModel):
     stock_actual:        Optional[int]  = 0
     stock_minimo_alerta: Optional[int]  = 5
 
+    @field_validator("frecuencia_horas")
+    @classmethod
+    def validar_frecuencia(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("La frecuencia debe ser mayor que cero.")
+        return value
+
+    @field_validator("stock_actual", "stock_minimo_alerta")
+    @classmethod
+    def validar_stock_no_negativo(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("El stock no puede ser negativo.")
+        return value
+
 
 class MedicamentoUpdate(BaseModel):
     nombre:              Optional[str]  = None
@@ -32,10 +46,31 @@ class MedicamentoUpdate(BaseModel):
     stock_actual:        Optional[int]  = None
     stock_minimo_alerta: Optional[int]  = None
 
+    @field_validator("frecuencia_horas")
+    @classmethod
+    def validar_frecuencia(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value <= 0:
+            raise ValueError("La frecuencia debe ser mayor que cero.")
+        return value
+
+    @field_validator("stock_actual", "stock_minimo_alerta")
+    @classmethod
+    def validar_stock_no_negativo(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("El stock no puede ser negativo.")
+        return value
+
 
 class StockUpdate(BaseModel):
     stock_actual:        int
     stock_minimo_alerta: Optional[int] = None
+
+    @field_validator("stock_actual", "stock_minimo_alerta")
+    @classmethod
+    def validar_stock_no_negativo(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 0:
+            raise ValueError("El stock no puede ser negativo.")
+        return value
 
 
 class MedicamentoResponse(BaseModel):
@@ -75,6 +110,13 @@ class TomaResponse(BaseModel):
     estado:                 EstadoToma
     fecha_hora_confirmacion: Optional[datetime]
     created_at:             datetime
+
+    @field_serializer("fecha_hora_programada", "fecha_hora_confirmacion")
+    def serializar_fecha_utc(self, value: Optional[datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        fecha_utc = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return fecha_utc.isoformat()
 
     class Config:
         from_attributes = True
@@ -136,4 +178,3 @@ class PrediccionAgotamientoItem(BaseModel):
     tomas_por_dia:    float
     dias_restantes:   float
     fecha_estimada:   str  # "YYYY-MM-DD"
-

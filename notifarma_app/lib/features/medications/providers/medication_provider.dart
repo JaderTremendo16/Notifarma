@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:notifarma_app/features/medications/data/models/medication_model.dart';
 import 'package:notifarma_app/features/medications/data/models/toma_model.dart';
 import 'package:notifarma_app/features/medications/data/repositories/medication_repository.dart';
+import 'package:notifarma_app/core/utils/date_formatter.dart';
 
 class MedicationProvider extends ChangeNotifier {
   final MedicationRepository _repository = MedicationRepository();
@@ -20,12 +21,12 @@ class MedicationProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get selectedFilter => _selectedFilter;
 
-  /// Retorna la última toma confirmada para un medicamento específico
+  /// Retorna la última dosis registrada, independientemente de su estado.
   TomaModel? getUltimaToma(String medId) {
     try {
-      final tomasMed = _tomasHistorial.where(
-        (t) => t.medicamentoId == medId && t.estado.toLowerCase() == 'tomado',
-      ).toList();
+      final tomasMed = _tomasHistorial
+          .where((t) => t.medicamentoId == medId)
+          .toList();
       if (tomasMed.isEmpty) return null;
       return tomasMed.first; // ya viene ordenado por fecha descendente
     } catch (_) {
@@ -36,12 +37,23 @@ class MedicationProvider extends ChangeNotifier {
   /// Verifica si la dosis actual de este medicamento ya fue tomada recientemente
   bool isDoseTakenRecently(String medId, {int frecuenciaHoras = 8}) {
     final ultima = getUltimaToma(medId);
+    if (ultima == null || ultima.estado.toLowerCase() != 'tomado') return false;
+    return _isDoseRecent(ultima, frecuenciaHoras);
+  }
+
+  bool isDoseRegisteredRecently(String medId, {int frecuenciaHoras = 8}) {
+    final ultima = getUltimaToma(medId);
     if (ultima == null) return false;
+    return _isDoseRecent(ultima, frecuenciaHoras);
+  }
+
+  bool _isDoseRecent(TomaModel toma, int frecuenciaHoras) {
     try {
-      final fechaStr = ultima.fechaHoraConfirmacion ?? ultima.fechaHoraProgramada;
+      final fechaStr = toma.fechaHoraConfirmacion ?? toma.fechaHoraProgramada;
       if (fechaStr.isEmpty) return false;
-      final fechaToma = DateTime.parse(fechaStr).toLocal();
-      final ahora = DateTime.now();
+      final fechaToma = DateFormatter.tryParseColombiaDateTime(fechaStr);
+      if (fechaToma == null) return false;
+      final ahora = DateFormatter.nowColombia();
       final diferencia = ahora.difference(fechaToma);
       // Si la toma fue hace menos tiempo que la frecuencia (ej. 4h, 8h, 12h o min 2h), está bloqueada
       final minHoras = frecuenciaHoras > 0 ? frecuenciaHoras : 4;
@@ -49,6 +61,58 @@ class MedicationProvider extends ChangeNotifier {
     } catch (_) {
       return false;
     }
+  }
+
+  DateTime? nextDoseAt(MedicationModel medication) {
+    if (medication.frecuenciaHoras <= 0 || medication.stockActual <= 0) {
+      return null;
+    }
+    final timeParts = medication.horaInicio.split(':');
+    final hour = int.tryParse(timeParts.first);
+    final minute = timeParts.length > 1 ? int.tryParse(timeParts[1]) : null;
+    if (hour == null || minute == null) return null;
+
+    final now = DateFormatter.nowColombia();
+    DateTime startDate = DateTime.utc(now.year, now.month, now.day);
+    if (medication.fechaInicio != null) {
+      final parsedStart = DateTime.tryParse(medication.fechaInicio!);
+      if (parsedStart == null) return null;
+      startDate = DateTime.utc(
+        parsedStart.year,
+        parsedStart.month,
+        parsedStart.day,
+      );
+    }
+
+    final firstDose = DateTime.utc(
+      startDate.year,
+      startDate.month,
+      startDate.day,
+      hour,
+      minute,
+    );
+    final nextDose = firstDose.isAfter(now)
+        ? firstDose
+        : firstDose.add(
+            Duration(
+              hours:
+                  (((now.difference(firstDose).inSeconds) ~/
+                          (medication.frecuenciaHoras * 3600)) +
+                      1) *
+                  medication.frecuenciaHoras,
+            ),
+          );
+
+    if (medication.fechaFin != null) {
+      final parsedEnd = DateTime.tryParse(medication.fechaFin!);
+      if (parsedEnd == null ||
+          DateTime.utc(nextDose.year, nextDose.month, nextDose.day).isAfter(
+            DateTime.utc(parsedEnd.year, parsedEnd.month, parsedEnd.day),
+          )) {
+        return null;
+      }
+    }
+    return nextDose;
   }
 
   List<MedicationModel> get filteredMedications {
@@ -76,8 +140,8 @@ class MedicationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> fetchMedicationsData() async {
-    _isLoading = true;
+  Future<void> fetchMedicationsData({bool silent = false}) async {
+    if (!silent) _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
@@ -88,7 +152,7 @@ class MedicationProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
-      _isLoading = false;
+      if (!silent) _isLoading = false;
       notifyListeners();
     }
   }

@@ -67,12 +67,11 @@ class MedicationRepository {
     if (frecuenciaHoras != null) body['frecuencia_horas'] = frecuenciaHoras;
     if (horaInicio != null) body['hora_inicio'] = horaInicio;
     if (stockActual != null) body['stock_actual'] = stockActual;
-    if (stockMinimoAlerta != null) body['stock_minimo_alerta'] = stockMinimoAlerta;
+    if (stockMinimoAlerta != null) {
+      body['stock_minimo_alerta'] = stockMinimoAlerta;
+    }
 
-    final response = await _apiClient.put(
-      '/medications/$medId',
-      body: body,
-    );
+    final response = await _apiClient.put('/medications/$medId', body: body);
     return MedicationModel.fromJson(response);
   }
 
@@ -102,9 +101,7 @@ class MedicationRepository {
     int stockActual, {
     int? stockMinimo,
   }) async {
-    final Map<String, dynamic> body = {
-      'stock_actual': stockActual,
-    };
+    final Map<String, dynamic> body = {'stock_actual': stockActual};
     if (stockMinimo != null) {
       body['stock_minimo_alerta'] = stockMinimo;
     }
@@ -149,19 +146,19 @@ class MedicationRepository {
   }
 
   Future<Map<String, dynamic>?> getResumenCuidador() async {
-    try {
-      final response = await _apiClient.get('/medications/cuidador/resumen-paciente');
-      if (response is Map<String, dynamic>) {
-        return response;
-      }
-      return null;
-    } catch (_) {
-      return null;
+    final response = await _apiClient.get(
+      '/medications/cuidador/resumen-paciente',
+    );
+    if (response is Map<String, dynamic>) {
+      return response;
     }
+    return null;
   }
 
   Future<List<int>> downloadAdherencePdf({int dias = 30}) async {
-    final bytes = await _apiClient.getBytes('/medications/reporte-adherencia/pdf?dias=$dias');
+    final bytes = await _apiClient.getBytes(
+      '/medications/reporte-adherencia/pdf?dias=$dias',
+    );
     return bytes;
   }
 }
